@@ -1,0 +1,14 @@
+{
+  "movie_search_bases": [
+    "https://fmovies.to/search?keyword=",
+    "https://www.123movies.co/search/",
+    "https://www.solarmovies.me/search/"
+  ],
+  "embed_fallbacks": [
+    "mycloud",
+    "upstream",
+    "vidcloud",
+    "streamwish",
+    "filemoon"
+  ]
+}
