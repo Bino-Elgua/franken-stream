@@ -10,11 +10,12 @@ from rich.table import Table
 
 from franken_stream.providers import ProviderManager
 from franken_stream.scraper import ContentScraper
+from franken_stream.tui import run_tui
 
 # Initialize CLI app and console
 app = typer.Typer(
     help="Terminal media streamer for movies and TV shows.",
-    no_args_is_help=True,
+    no_args_is_help=False,
 )
 console = Console()
 
@@ -371,6 +372,33 @@ def _handle_selection(
 
     except (ValueError, IndexError):
         console.print("[red]✗[/red] Invalid selection")
+
+
+@app.callback(invoke_without_command=True)
+def default_command(ctx: typer.Context) -> None:
+    """
+    Launch Franken-Stream TUI or CLI based on arguments.
+    
+    Run with no args to launch full-screen TUI dashboard.
+    Use --cli flag to force CLI mode.
+    """
+    # If no command was invoked, launch TUI
+    if ctx.invoked_subcommand is None:
+        # Check if --cli flag was used
+        if "--cli" not in ctx.args and "-c" not in ctx.args:
+            # Launch TUI
+            try:
+                run_tui()
+            except ImportError:
+                console.print(
+                    "[yellow]⚠[/yellow] Textual not installed. "
+                    "Install: pip install textual"
+                )
+                console.print("[cyan]→[/cyan] Falling back to CLI mode\n")
+                app()
+            except Exception:
+                # Fallback to CLI if TUI fails
+                app()
 
 
 if __name__ == "__main__":
