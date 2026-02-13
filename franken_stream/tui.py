@@ -34,8 +34,8 @@ class StatusBar(Static):
     }
     """
 
-    def __init__(self, message: str = "Ready"):
-        super().__init__(message)
+    def __init__(self, message: str = "Ready", **kwargs):
+        super().__init__(message, **kwargs)
 
     def update_status(self, message: str) -> None:
         """Update status message."""
