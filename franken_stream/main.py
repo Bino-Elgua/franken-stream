@@ -330,47 +330,42 @@ def _handle_selection(
             f"[cyan]URL:[/cyan] {url}\n"
         )
 
-        # Try to extract embed if it's a page URL
-        if url.startswith("http") and "/watch/" in url:
+        # Determine if this is a detail page and extract embed
+        is_embed = False
+        is_detail_page = "/watch/" in url or "/movie/" in url or "/title/" in url
+        
+        if is_detail_page:
             console.print("[cyan]→[/cyan] Fetching player embed...")
-            embed_url = scraper.fetch_embed_from_page(url)
+            
+            # Try to get the full base URL for relative URL construction
+            base_url = None
+            if url.startswith("/"):
+                # Relative URL - need to determine base
+                console.print("[yellow]⚠ Relative URL detected, using fallback base...")
+            
+            embed_url = scraper.fetch_embed_from_page(url, base_url=base_url)
             if embed_url:
-                console.print(f"[green]✓ Found embed:[/green] {embed_url[:60]}...")
+                is_embed = True
                 url = embed_url
-            else:
-                console.print(
-                    "[yellow]⚠ No embed found, using page URL directly"
-                )
 
         # Handle download or stream
         if download:
             scraper.download_video(url, output)
         else:
             # Try to stream
-            if url.startswith(("http://", "https://")):
-                try:
-                    import subprocess
-
-                    console.print("[cyan]→[/cyan] Starting mpv player...")
-                    # Try mpv with reasonable flags for Termux
-                    subprocess.run(
-                        ["mpv", "--hwdec=auto", url],
-                        timeout=3600,
-                    )
-                except FileNotFoundError:
+            if url.startswith(("http://", "https://", "//")):
+                if is_detail_page and not is_embed:
                     console.print(
-                        "[yellow]⚠[/yellow] mpv not found. "
-                        "Falling back to yt-dlp..."
+                        "[yellow]→[/yellow] No embed extracted, "
+                        "opening in browser..."
                     )
-                    scraper.stream_with_yt_dlp(url)
-                except subprocess.TimeoutExpired:
-                    pass  # Normal playback end
-                except Exception as e:
-                    console.print(f"[yellow]⚠[/yellow] Playback error: {e}")
+                    console.print(f"[green]{url}[/green]")
+                else:
+                    scraper.play_url(url, is_embed=is_embed)
             else:
                 console.print(
                     "[yellow]→[/yellow] Opening in browser "
-                    "(direct streaming not available)."
+                    "(streaming not available)."
                 )
                 console.print(f"[green]{url}[/green]")
 

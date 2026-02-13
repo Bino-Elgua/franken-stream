@@ -187,35 +187,68 @@ class ContentScraper:
                 console.log(f"[red]Error extracting results:[/red] {e}")
             return []
 
-    def fetch_embed_from_page(self, page_url: str) -> Optional[str]:
+    def fetch_embed_from_page(self, page_url: str, base_url: Optional[str] = None) -> Optional[str]:
         """
-        Fetch a page and extract embedded video URL.
+        Fetch a page and extract embedded video URL with multiple strategies.
 
         Args:
             page_url: URL of the movie/show page
+            base_url: Base URL for constructing full URLs from relative paths
 
         Returns:
             Embed URL if found, None otherwise
         """
         try:
+            # Handle relative URLs
+            if not page_url.startswith("http"):
+                if base_url:
+                    page_url = base_url.rstrip("/") + "/" + page_url.lstrip("/")
+                else:
+                    return None
+
+            console.log(f"[cyan]→ Fetching embed from: {page_url[:60]}...")
             response = self.session.get(page_url, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
+            html_str = str(soup)
 
-            # Look for iframe with common embed patterns
+            # Strategy 1: Look for iframes with specific selectors
+            selectors = [
+                ".player-container iframe",
+                "#player iframe",
+                "#watch-iframe iframe",
+                "iframe[src*='embed']",
+                "iframe[src*='player']",
+                "iframe[src*='watch']",
+            ]
+            
+            for selector in selectors:
+                iframes = soup.select(selector)
+                for iframe in iframes:
+                    src = iframe.get("src", "")
+                    if src:
+                        embed_url = self._make_absolute_url(src, page_url)
+                        console.log(f"[green]✓ Found iframe embed:[/green] {embed_url[:60]}...")
+                        return embed_url
+
+            # Strategy 2: All iframes (fallback)
             for iframe in soup.find_all("iframe"):
                 src = iframe.get("src", "")
                 if src and any(
                     pattern in src.lower()
-                    for pattern in ["embed", "player", "watch", "video"]
+                    for pattern in ["embed", "player", "watch", "vid", "m3u8", "mp4"]
                 ):
-                    return src
+                    embed_url = self._make_absolute_url(src, page_url)
+                    console.log(f"[green]✓ Found iframe embed:[/green] {embed_url[:60]}...")
+                    return embed_url
 
-            # Look for video tags
+            # Strategy 3: Look for video tags
             for video in soup.find_all("video"):
                 src = video.get("src", "")
                 if src:
-                    return src
+                    embed_url = self._make_absolute_url(src, page_url)
+                    console.log(f"[green]✓ Found video tag:[/green] {embed_url[:60]}...")
+                    return embed_url
 
                 # Check source tags inside video
                 for source in video.find_all("source"):
@@ -223,20 +256,71 @@ class ContentScraper:
                     if src and any(
                         ext in src.lower() for ext in [".mp4", ".m3u8", "stream"]
                     ):
-                        return src
+                        embed_url = self._make_absolute_url(src, page_url)
+                        console.log(f"[green]✓ Found video source:[/green] {embed_url[:60]}...")
+                        return embed_url
 
-            # Last resort: regex search for embed patterns
-            html_str = str(soup)
-            for pattern, _ in EMBED_PATTERNS:
+            # Strategy 4: Regex search for direct URLs
+            url_pattern = r'(https?://[^\s\'"]+\.(m3u8|mp4))'
+            matches = re.findall(url_pattern, html_str)
+            if matches:
+                embed_url = matches[0][0]
+                console.log(f"[green]✓ Found direct URL:[/green] {embed_url[:60]}...")
+                return embed_url
+
+            # Strategy 5: Regex fallback on all patterns
+            for pattern, pattern_type in EMBED_PATTERNS:
                 matches = re.findall(pattern, html_str)
                 if matches:
-                    return matches[0]
+                    embed_url = matches[0]
+                    if embed_url.startswith("http"):
+                        console.log(f"[green]✓ Found {pattern_type}:[/green] {embed_url[:60]}...")
+                        return embed_url
 
+            console.log("[yellow]⚠ No embed found on detail page")
             return None
 
+        except requests.exceptions.Timeout:
+            console.log(f"[yellow]⚠ Timeout fetching {page_url}")
+            return None
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code in [403, 404]:
+                console.log(f"[yellow]⚠ Access denied/not found: {e.response.status_code}")
+            else:
+                console.log(f"[yellow]⚠ HTTP error: {e.response.status_code}")
+            return None
         except Exception as e:
-            console.log(f"[yellow]⚠ Could not fetch embed from {page_url}: {e}")
+            console.log(f"[yellow]⚠ Could not fetch embed: {e}")
             return None
+
+    @staticmethod
+    def _make_absolute_url(url: str, page_url: str) -> str:
+        """
+        Convert relative URL to absolute URL.
+
+        Args:
+            url: URL (relative or absolute)
+            page_url: Base page URL for constructing absolute URLs
+
+        Returns:
+            Absolute URL
+        """
+        if url.startswith("http://") or url.startswith("https://"):
+            return url
+        
+        if url.startswith("//"):
+            # Protocol-relative URL
+            return "https:" + url
+        
+        if url.startswith("/"):
+            # Absolute path
+            from urllib.parse import urlparse
+            parsed = urlparse(page_url)
+            return f"{parsed.scheme}://{parsed.netloc}{url}"
+        
+        # Relative path
+        from urllib.parse import urljoin
+        return urljoin(page_url, url)
 
     def search_duckduckgo(self, query: str) -> List[Tuple[str, str]]:
         """
@@ -272,6 +356,64 @@ class ContentScraper:
         except Exception as e:
             console.log(f"[yellow]⚠[/yellow] DuckDuckGo search failed: {e}")
             return []
+
+    def play_url(self, url: str, is_embed: bool = False) -> bool:
+        """
+        Play a URL using yt-dlp + mpv for best compatibility.
+
+        Args:
+            url: Video URL to play
+            is_embed: True if URL is an embed (use yt-dlp for HLS/subtitles)
+
+        Returns:
+            True if playback started, False otherwise
+        """
+        try:
+            console.log(f"[cyan]→ Preparing playback...")
+            
+            # Use yt-dlp for embeds to handle HLS, subtitles, etc.
+            if is_embed:
+                console.log("[cyan]  Getting stream URL via yt-dlp...")
+                result = subprocess.run(
+                    [
+                        "yt-dlp",
+                        "-f", "best",
+                        "--no-playlist",
+                        "--get-url",
+                        url
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    stream_url = result.stdout.strip().split("\n")[0]
+                    console.log(f"[green]✓ Got stream URL[/green]")
+                    url = stream_url
+                else:
+                    console.log("[yellow]⚠ yt-dlp could not extract stream, trying direct...")
+            
+            # Try mpv
+            console.log("[cyan]→ Starting mpv...")
+            subprocess.run(
+                ["mpv", "--hwdec=auto", url],
+                timeout=3600,
+            )
+            return True
+
+        except FileNotFoundError:
+            console.log(
+                "[yellow]⚠ mpv not found. Install with: pkg install mpv"
+            )
+            console.log(f"[green]Stream URL: {url}[/green]")
+            console.log("[cyan]Paste this URL in your browser or use: yt-dlp {url}")
+            return True  # Still success (user can play manually)
+        except subprocess.TimeoutExpired:
+            return True  # Normal end of playback
+        except Exception as e:
+            console.log(f"[red]✗ Playback error: {e}")
+            return False
 
     def stream_with_yt_dlp(self, query: str) -> bool:
         """
