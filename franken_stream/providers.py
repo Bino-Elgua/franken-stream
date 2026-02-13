@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,9 @@ import requests
 from rich.console import Console
 
 console = Console()
+
+# Cache TTL: 24 hours
+CACHE_TTL = 86400
 
 
 class ProviderManager:
@@ -136,3 +140,50 @@ class ProviderManager:
         """Get list of embed fallback hosts."""
         providers = self.load_providers()
         return providers.get("embed_fallbacks", [])
+
+    def get_legal_sources(self) -> List[str]:
+        """Get list of legal streaming sources."""
+        providers = self.load_providers()
+        return providers.get("legal_fallbacks", [])
+
+    def validate_config(self) -> bool:
+        """
+        Validate providers configuration.
+
+        Returns:
+            True if config is valid, False otherwise
+        """
+        try:
+            config = self.load_providers()
+
+            # Check required fields
+            required = ["movie_search_bases", "embed_fallbacks"]
+            for key in required:
+                if key not in config:
+                    console.log(f"[red]✗ Missing required field: {key}")
+                    return False
+
+                if not isinstance(config[key], list):
+                    console.log(
+                        f"[red]✗ {key} must be a list, got {type(config[key])}"
+                    )
+                    return False
+
+            # Warn if URLs look suspicious
+            for url in config.get("movie_search_bases", []):
+                if not isinstance(url, str):
+                    console.log(f"[yellow]⚠ Invalid URL type: {url}")
+                    continue
+
+                if not url.startswith(("http://", "https://")):
+                    console.log(f"[yellow]⚠ URL not HTTP(S): {url}")
+
+            console.log("[green]✓[/green] Config is valid")
+            return True
+
+        except json.JSONDecodeError as e:
+            console.log(f"[red]✗ Invalid JSON: {e}")
+            return False
+        except Exception as e:
+            console.log(f"[red]✗ Validation error: {e}")
+            return False

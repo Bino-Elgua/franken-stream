@@ -1,5 +1,6 @@
 """Web scraping and content discovery."""
 
+import re
 import subprocess
 from typing import List, Optional, Tuple
 from urllib.parse import quote
@@ -16,6 +17,15 @@ DEFAULT_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/119.0.0.0 Safari/537.36"
 )
+
+# Regex patterns for robust embed extraction
+EMBED_PATTERNS = [
+    (r'iframe[^>]*src=["\']([^"\']+)["\']', "iframe src"),
+    (r'<a[^>]*href=["\']([^"\']*(?:embed|player)[^"\']*)["\']', "embed link"),
+    (r'src=["\']([^"\']*\.m3u8[^"\']*)["\']', "HLS stream"),
+    (r'src=["\']([^"\']*\.mp4[^"\']*)["\']', "MP4 video"),
+    (r'data-url=["\']([^"\']+)["\']', "data-url attribute"),
+]
 
 
 class ContentScraper:
@@ -75,7 +85,7 @@ class ContentScraper:
     @staticmethod
     def _extract_results(soup: BeautifulSoup) -> List[Tuple[str, str]]:
         """
-        Extract movie/show titles and links from parsed HTML.
+        Extract movie/show titles and links from parsed HTML with fallbacks.
 
         Args:
             soup: BeautifulSoup object
@@ -85,7 +95,7 @@ class ContentScraper:
         """
         results = []
         try:
-            # Try common selectors for streaming sites
+            # Primary: Try common selectors for streaming sites
             for link in soup.find_all("a", href=True):
                 text = link.get_text(strip=True)
                 href = link.get("href", "")
@@ -102,6 +112,17 @@ class ContentScraper:
 
                     results.append((text, href))
 
+            # Fallback: Try regex patterns if no results
+            if not results:
+                html_str = str(soup)
+                for pattern, pattern_type in EMBED_PATTERNS:
+                    matches = re.findall(pattern, html_str)
+                    for match in matches:
+                        if match and match.startswith(("http", "/", ".")):
+                            # Extract title from URL or HTML nearby
+                            title = match.split("/")[-1][:50]
+                            results.append((f"{title} ({pattern_type})", match))
+
             # Deduplicate by URL while preserving order
             seen = set()
             unique_results = []
@@ -114,6 +135,41 @@ class ContentScraper:
 
         except Exception as e:
             console.log(f"[red]Error extracting results:[/red] {e}")
+            return []
+
+    def search_duckduckgo(self, query: str) -> List[Tuple[str, str]]:
+        """
+        Fallback search using DuckDuckGo for free streaming links.
+
+        Args:
+            query: Search query
+
+        Returns:
+            List of (title, url) tuples from DDG results
+        """
+        try:
+            console.log(f"Searching DuckDuckGo for '{query}'...")
+            ddg_query = f"{query} watch free online site:youtube.com OR site:reddit.com"
+            url = "https://duckduckgo.com/html/"
+            
+            params = {"q": ddg_query}
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.content, "html.parser")
+            results = []
+
+            # Extract DDG results
+            for result in soup.find_all("a", class_="result__url"):
+                link_text = result.get_text(strip=True)
+                link_href = result.get("href", "")
+                if link_text and link_href:
+                    results.append((link_text[:60], link_href))
+
+            return results[:10]
+
+        except Exception as e:
+            console.log(f"[yellow]⚠[/yellow] DuckDuckGo search failed: {e}")
             return []
 
     def stream_with_yt_dlp(self, query: str) -> bool:
@@ -183,3 +239,80 @@ class ContentScraper:
         except Exception as e:
             console.log(f"[red]✗[/red] yt-dlp error: {e}")
             return False
+
+    def download_video(
+        self, url: str, output_path: Optional[str] = None
+    ) -> bool:
+        """
+        Download video using yt-dlp.
+
+        Args:
+            url: Video URL
+            output_path: Output directory (default: ~/Downloads)
+
+        Returns:
+            True if download started, False otherwise
+        """
+        try:
+            from pathlib import Path
+
+            if output_path is None:
+                output_path = str(Path.home() / "Downloads")
+
+            console.log(f"Downloading to {output_path}...")
+            result = subprocess.run(
+                [
+                    "yt-dlp",
+                    "-o",
+                    f"{output_path}/%(title)s.%(ext)s",
+                    url,
+                ],
+                timeout=3600,
+            )
+
+            if result.returncode == 0:
+                console.log(f"[green]✓[/green] Download complete")
+                return True
+            else:
+                console.log("[red]✗[/red] Download failed")
+                return False
+
+        except FileNotFoundError:
+            console.log(
+                "[red]✗[/red] yt-dlp not found. Install: pip install yt-dlp"
+            )
+            return False
+        except subprocess.TimeoutExpired:
+            console.log("[yellow]⚠[/yellow] Download timed out")
+            return False
+        except Exception as e:
+            console.log(f"[red]✗[/red] Download error: {e}")
+            return False
+
+    def test_provider_url(self, url: str, timeout: int = 10) -> Tuple[bool, float]:
+        """
+        Test if a provider URL is reachable.
+
+        Args:
+            url: Provider URL to test
+            timeout: Request timeout in seconds
+
+        Returns:
+            Tuple of (is_healthy, response_time_in_seconds)
+        """
+        try:
+            import time
+
+            start = time.time()
+            response = self.session.head(url, timeout=timeout)
+            elapsed = time.time() - start
+
+            is_healthy = response.status_code < 400
+            return is_healthy, elapsed
+
+        except requests.Timeout:
+            return False, float(timeout)
+        except requests.RequestException:
+            return False, 0.0
+        except Exception:
+            return False, 0.0

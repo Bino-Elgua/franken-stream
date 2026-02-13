@@ -16,7 +16,14 @@
     "streamtape.com"
   ],
   "legal_fallbacks": [
-    "https://www.youtube.com/results?search_query="
+    "https://www.youtube.com/results?search_query=",
+    "https://www.tubi.tv/search?query=",
+    "https://www.crackle.com/search?q=",
+    "https://tubitv.com/search?q="
   ],
-  "notes": "Updated Feb 2026. Sites change frequently—test manually first. Use VPN/proxy if needed. yt-dlp fallback handles 1000+ embeds and YouTube. For legal options, try Tubi, Pluto TV, Crackle, Freevee, Kanopy (library), Plex free tier, or YouTube free movies."
+  "series_search_bases": [
+    "https://fmovies.to/search?keyword=",
+    "https://myflixerz.to/search/"
+  ],
+  "notes": "Updated Feb 2026. Sites change frequently—test manually first. Use VPN/proxy if needed. yt-dlp fallback handles 1000+ embeds. Legal sources: YouTube, Tubi, Crackle, Pluto TV, Freevee (Amazon), Kanopy (library), Plex free."
 }
