@@ -18,9 +18,14 @@ class ProviderManager:
         """Initialize provider manager with config directory."""
         self.config_dir = Path.home() / ".franken-stream"
         self.config_file = self.config_dir / "providers.json"
+        # CUSTOMIZE: Replace with your own GitHub providers repo:
+        # self.github_url = (
+        #     "https://raw.githubusercontent.com/"
+        #     "YOUR_ACTUAL_USERNAME/stream-providers/main/providers.json"
+        # )
         self.github_url = (
             "https://raw.githubusercontent.com/"
-            "YOUR_GITHUB_USERNAME/stream-providers/main/providers.json"
+            "Bino-Elgua/stream-providers/main/providers.json"
         )
         self.providers: Optional[Dict[str, Any]] = None
 

@@ -1,0 +1,22 @@
+{
+  "movie_search_bases": [
+    "https://fmovies.to/search?keyword=",
+    "https://myflixerz.to/search/",
+    "https://solarmovie.pe/search/",
+    "https://cineby.ru/search/",
+    "https://123moviesfree.net/search/",
+    "https://movies2watch.tv/search?q=",
+    "https://yuppow.com/search/"
+  ],
+  "embed_fallbacks": [
+    "vidcloud9.com",
+    "vidplay.online",
+    "upstream.to",
+    "mycloud",
+    "streamtape.com"
+  ],
+  "legal_fallbacks": [
+    "https://www.youtube.com/results?search_query="
+  ],
+  "notes": "Updated Feb 2026. Sites change frequently—test manually first. Use VPN/proxy if needed. yt-dlp fallback handles 1000+ embeds and YouTube. For legal options, try Tubi, Pluto TV, Crackle, Freevee, Kanopy (library), Plex free tier, or YouTube free movies."
+}

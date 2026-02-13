@@ -78,19 +78,30 @@ Providers are stored at `~/.franken-stream/providers.json`:
 {
   "movie_search_bases": [
     "https://fmovies.to/search?keyword=",
-    "https://www.123movies.co/search/"
+    "https://myflixerz.to/search/",
+    "https://solarmovie.pe/search/",
+    "https://cineby.ru/search/",
+    "https://123moviesfree.net/search/",
+    "https://movies2watch.tv/search?q=",
+    "https://yuppow.com/search/"
   ],
   "embed_fallbacks": [
+    "vidcloud9.com",
+    "vidplay.online",
+    "upstream.to",
     "mycloud",
-    "upstream",
-    "vidcloud"
-  ]
+    "streamtape.com"
+  ],
+  "legal_fallbacks": [
+    "https://www.youtube.com/results?search_query="
+  ],
+  "notes": "Sites change frequently—test manually first. Use VPN/proxy if needed. yt-dlp fallback handles 1000+ embeds."
 }
 ```
 
-**First run**: The app will attempt to download providers from GitHub. If that fails, it uses sensible defaults.
+**First run**: The app will attempt to download providers from GitHub. If that fails, it loads defaults from the config file above.
 
-**To update**: Run `franken-stream update`
+**To update**: Run `franken-stream update` (pulls fresh list from your GitHub providers repo)
 
 ### Custom Providers
 
