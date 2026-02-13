@@ -48,7 +48,7 @@ class ContentScraper:
             self.session.proxies = {"http": proxy, "https": proxy}
 
     def search(
-        self, query: str, base_urls: List[str]
+        self, query: str, base_urls: List[str], verbose: bool = False
     ) -> List[Tuple[str, str]]:
         """
         Search for content across multiple providers.
@@ -56,6 +56,7 @@ class ContentScraper:
         Args:
             query: Search query (e.g., "Inception")
             base_urls: List of base URLs to search
+            verbose: Print detailed debug info
 
         Returns:
             List of (title, url) tuples
@@ -66,51 +67,97 @@ class ContentScraper:
         for base_url in base_urls:
             try:
                 full_url = f"{base_url}{encoded_query}"
-                console.log(f"Searching: {full_url[:60]}...")
+                if verbose:
+                    console.log(f"[cyan]→ Searching: {full_url}")
+                else:
+                    console.log(f"Searching: {full_url[:60]}...")
+                
                 response = self.session.get(full_url, timeout=10)
                 response.raise_for_status()
 
                 soup = BeautifulSoup(response.content, "html.parser")
-                items = self._extract_results(soup)
+                items = self._extract_results(soup, verbose=verbose)
                 results.extend(items)
-                console.log(f"[green]✓[/green] Found {len(items)} results")
+                
+                if verbose:
+                    console.log(f"[green]✓ Found {len(items)} results from {base_url}")
+                else:
+                    console.log(f"[green]✓[/green] Found {len(items)} results")
 
+            except requests.exceptions.ConnectionError as e:
+                if verbose:
+                    console.log(f"[yellow]⚠ Connection failed for {base_url}: {e}")
+                # Silently skip connection errors
+            except requests.exceptions.Timeout:
+                if verbose:
+                    console.log(f"[yellow]⚠ Timeout searching {base_url}")
+                # Silently skip timeouts
+            except requests.exceptions.HTTPError as e:
+                if verbose:
+                    console.log(f"[yellow]⚠ HTTP error {e.response.status_code} for {base_url}")
+                # Silently skip HTTP errors
             except requests.RequestException as e:
-                console.log(f"[yellow]⚠[/yellow] Error searching {base_url}: {e}")
+                if verbose:
+                    console.log(f"[yellow]⚠[/yellow] Error searching {base_url}: {e}")
             except Exception as e:
-                console.log(f"[red]✗[/red] Parsing error: {e}")
+                if verbose:
+                    console.log(f"[red]✗[/red] Parsing error: {e}")
 
         return results
 
     @staticmethod
-    def _extract_results(soup: BeautifulSoup) -> List[Tuple[str, str]]:
+    def _extract_results(
+        soup: BeautifulSoup, verbose: bool = False
+    ) -> List[Tuple[str, str]]:
         """
         Extract movie/show titles and links from parsed HTML with fallbacks.
 
         Args:
             soup: BeautifulSoup object
+            verbose: Print debug info
 
         Returns:
             List of (title, url) tuples
         """
         results = []
         try:
-            # Primary: Try common selectors for streaming sites
-            for link in soup.find_all("a", href=True):
-                text = link.get_text(strip=True)
-                href = link.get("href", "")
+            # Primary: Try common streaming site selectors
+            selectors = [
+                ("a.film-name", "film-name"),  # myflixerz, cineby
+                ("a.title", "title"),
+                ("a[href*='/watch/']", "watch link"),
+                ("a[href*='/movie/']", "movie link"),
+                ("a[href*='/embed/']", "embed link"),
+                ("h3 a", "heading link"),
+                ("div.card a", "card link"),
+                ("div.film-poster a", "poster link"),
+                (".mli-info a", "mli-info link"),
+            ]
 
-                # Filter out navigation and empty links
-                if text and len(text) > 2 and href and not href.startswith("#"):
-                    # Make relative URLs absolute if needed
-                    if href.startswith("/"):
-                        parsed = soup.find("base")
-                        if parsed:
-                            base = parsed.get("href", "")
-                            if base:
-                                href = base.rstrip("/") + href
+            for selector, selector_type in selectors:
+                matches = soup.select(selector)
+                if matches:
+                    if verbose:
+                        console.log(f"[cyan]  Found {len(matches)} with selector: {selector}")
+                    for link in matches:
+                        text = link.get_text(strip=True)
+                        href = link.get("href", "")
 
-                    results.append((text, href))
+                        # Filter bad results
+                        if (
+                            text
+                            and len(text) > 2
+                            and len(text) < 100  # Avoid nav menu text
+                            and href
+                            and not href.startswith("#")
+                            and not any(
+                                bad in text.lower()
+                                for bad in ["home", "search", "menu", "nav", "login", "sign"]
+                            )
+                        ):
+                            results.append((text, href))
+                    if results:
+                        break  # Use first selector that worked
 
             # Fallback: Try regex patterns if no results
             if not results:
@@ -119,23 +166,77 @@ class ContentScraper:
                     matches = re.findall(pattern, html_str)
                     for match in matches:
                         if match and match.startswith(("http", "/", ".")):
-                            # Extract title from URL or HTML nearby
                             title = match.split("/")[-1][:50]
                             results.append((f"{title} ({pattern_type})", match))
+                if results and verbose:
+                    console.log(f"[cyan]  Fallback: Regex matched {len(results)} patterns")
 
             # Deduplicate by URL while preserving order
             seen = set()
             unique_results = []
             for title, url in results:
-                if url not in seen:
+                if url not in seen and title not in seen:
                     seen.add(url)
+                    seen.add(title)
                     unique_results.append((title, url))
 
             return unique_results[:20]  # Limit to top 20 results
 
         except Exception as e:
-            console.log(f"[red]Error extracting results:[/red] {e}")
+            if verbose:
+                console.log(f"[red]Error extracting results:[/red] {e}")
             return []
+
+    def fetch_embed_from_page(self, page_url: str) -> Optional[str]:
+        """
+        Fetch a page and extract embedded video URL.
+
+        Args:
+            page_url: URL of the movie/show page
+
+        Returns:
+            Embed URL if found, None otherwise
+        """
+        try:
+            response = self.session.get(page_url, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, "html.parser")
+
+            # Look for iframe with common embed patterns
+            for iframe in soup.find_all("iframe"):
+                src = iframe.get("src", "")
+                if src and any(
+                    pattern in src.lower()
+                    for pattern in ["embed", "player", "watch", "video"]
+                ):
+                    return src
+
+            # Look for video tags
+            for video in soup.find_all("video"):
+                src = video.get("src", "")
+                if src:
+                    return src
+
+                # Check source tags inside video
+                for source in video.find_all("source"):
+                    src = source.get("src", "")
+                    if src and any(
+                        ext in src.lower() for ext in [".mp4", ".m3u8", "stream"]
+                    ):
+                        return src
+
+            # Last resort: regex search for embed patterns
+            html_str = str(soup)
+            for pattern, _ in EMBED_PATTERNS:
+                matches = re.findall(pattern, html_str)
+                if matches:
+                    return matches[0]
+
+            return None
+
+        except Exception as e:
+            console.log(f"[yellow]⚠ Could not fetch embed from {page_url}: {e}")
+            return None
 
     def search_duckduckgo(self, query: str) -> List[Tuple[str, str]]:
         """

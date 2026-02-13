@@ -1,29 +1,27 @@
 {
   "movie_search_bases": [
-    "https://fmovies.to/search?keyword=",
     "https://myflixerz.to/search/",
-    "https://solarmovie.pe/search/",
+    "https://fmovies.co/search?keyword=",
     "https://cineby.ru/search/",
-    "https://123moviesfree.net/search/",
-    "https://movies2watch.tv/search?q=",
-    "https://yuppow.com/search/"
+    "https://ww4.123moviesfree.net/search/",
+    "https://yesmovies.ag/search?keyword=",
+    "https://hurawatch.cc/search?keyword=",
+    "https://lookmovie2.to/search?q=",
+    "https://2flix.com/search/"
   ],
   "embed_fallbacks": [
     "vidcloud9.com",
     "vidplay.online",
     "upstream.to",
-    "mycloud",
-    "streamtape.com"
+    "streamtape.com",
+    "mycloud"
   ],
   "legal_fallbacks": [
-    "https://www.youtube.com/results?search_query=",
-    "https://www.tubi.tv/search?query=",
-    "https://www.crackle.com/search?q=",
-    "https://tubitv.com/search?q="
+    "https://www.youtube.com/results?search_query="
   ],
   "series_search_bases": [
-    "https://fmovies.to/search?keyword=",
-    "https://myflixerz.to/search/"
+    "https://myflixerz.to/search/",
+    "https://cineby.ru/search/"
   ],
-  "notes": "Updated Feb 2026. Sites change frequently—test manually first. Use VPN/proxy if needed. yt-dlp fallback handles 1000+ embeds. Legal sources: YouTube, Tubi, Crackle, Pluto TV, Freevee (Amazon), Kanopy (library), Plex free."
+  "notes": "Feb 2026 working mirrors (updated from real-world testing). myflixerz.to and cineby.ru most reliable. Use --proxy if blocked by ISP. yt-dlp fallback searches YouTube for free/legal uploads."
 }

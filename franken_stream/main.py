@@ -37,6 +37,9 @@ def watch(
     output: Optional[str] = typer.Option(
         None, "-o", help="Download output directory"
     ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show detailed debug info"
+    ),
 ) -> None:
     """
     Search and stream a movie or TV show.
@@ -64,7 +67,7 @@ def watch(
 
         # Search for content
         console.print(f"\n[cyan]Searching for:[/cyan] {query}\n")
-        results = scraper.search(query, bases)
+        results = scraper.search(query, bases, verbose=verbose)
 
         if not results:
             console.print("[yellow]⚠[/yellow] No results found locally.")
@@ -327,6 +330,18 @@ def _handle_selection(
             f"[cyan]URL:[/cyan] {url}\n"
         )
 
+        # Try to extract embed if it's a page URL
+        if url.startswith("http") and "/watch/" in url:
+            console.print("[cyan]→[/cyan] Fetching player embed...")
+            embed_url = scraper.fetch_embed_from_page(url)
+            if embed_url:
+                console.print(f"[green]✓ Found embed:[/green] {embed_url[:60]}...")
+                url = embed_url
+            else:
+                console.print(
+                    "[yellow]⚠ No embed found, using page URL directly"
+                )
+
         # Handle download or stream
         if download:
             scraper.download_video(url, output)
@@ -336,21 +351,28 @@ def _handle_selection(
                 try:
                     import subprocess
 
-                    # Try mpv
-                    subprocess.run(["mpv", url], timeout=3600)
+                    console.print("[cyan]→[/cyan] Starting mpv player...")
+                    # Try mpv with reasonable flags for Termux
+                    subprocess.run(
+                        ["mpv", "--hwdec=auto", url],
+                        timeout=3600,
+                    )
                 except FileNotFoundError:
                     console.print(
                         "[yellow]⚠[/yellow] mpv not found. "
-                        "URL copied. Paste in your browser:"
+                        "Falling back to yt-dlp..."
                     )
-                    console.print(f"[green]{url}[/green]")
-                except Exception:
-                    pass
+                    scraper.stream_with_yt_dlp(url)
+                except subprocess.TimeoutExpired:
+                    pass  # Normal playback end
+                except Exception as e:
+                    console.print(f"[yellow]⚠[/yellow] Playback error: {e}")
             else:
                 console.print(
-                    "[yellow]→[/yellow] Manual streaming not yet implemented. "
-                    "Visit the link above in your browser."
+                    "[yellow]→[/yellow] Opening in browser "
+                    "(direct streaming not available)."
                 )
+                console.print(f"[green]{url}[/green]")
 
     except (ValueError, IndexError):
         console.print("[red]✗[/red] Invalid selection")
