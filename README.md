@@ -4,13 +4,15 @@ A terminal-based media streamer for movies and TV shows, inspired by [ani-cli](h
 
 ## Features
 
-- **CLI-based streaming**: Search and stream movies/shows directly from your terminal
-- **Multiple providers**: Configurable streaming providers via JSON
-- **Fallback streaming**: Uses yt-dlp if no direct embeds are found
-- **Proxy support**: Optional HTTP proxy configuration
-- **Interactive selection**: Pick from search results with a nice menu
+- **Full-screen TUI dashboard**: Modern Textual-based UI with search, browse, and playback controls
+- **CLI streaming**: Search and stream movies/shows directly from your terminal
+- **Multiple providers**: Configurable streaming providers via JSON with automatic updates
+- **4-level fallback chain**: Configured providers → regex embed extraction → DuckDuckGo search → yt-dlp YouTube
+- **Proxy support**: Optional HTTP proxy configuration for all requests
+- **Interactive selection**: Pick from search results with an intuitive menu
 - **Auto-download providers**: Fetches provider list from GitHub on first run
-- **Graceful error handling**: Clear error messages and fallbacks
+- **Termux/Android optimized**: Works on mobile with mpv hardware acceleration
+- **Graceful error handling**: Clear error messages and automatic fallbacks
 
 ## Installation
 
@@ -36,6 +38,13 @@ pip install franken-stream
 
 ## Quick Start
 
+### Launch TUI Dashboard
+```bash
+# Start the full-screen TUI (default with no args)
+franken-stream
+```
+
+### CLI Commands
 ```bash
 # Search and stream a movie
 franken-stream watch "Inception"
@@ -46,8 +55,14 @@ franken-stream watch "Breaking Bad"
 # With a proxy
 franken-stream watch "The Matrix" --proxy http://proxy.example.com:8080
 
+# Search TV shows
+franken-stream tv "Breaking Bad" -s 5 -e 14
+
 # Update providers from GitHub
 franken-stream update
+
+# Test provider health
+franken-stream test-providers
 
 # Show configuration
 franken-stream config
@@ -67,6 +82,7 @@ Installed automatically via pip:
 - `beautifulsoup4`: HTML parsing
 - `yt-dlp`: YouTube/video downloader
 - `rich`: Beautiful terminal output
+- `textual`: Full-screen TUI framework
 
 ## Configuration
 
@@ -129,6 +145,21 @@ Example:
 
 ## Commands
 
+### Default (TUI Dashboard)
+
+Launch the interactive full-screen dashboard.
+
+```bash
+franken-stream
+```
+
+**Features:**
+- `/` to search
+- `b` to browse categories
+- `h` to view search history
+- `u` to update providers
+- `q` to quit
+
 ### `watch`
 
 Search for and stream content.
@@ -138,8 +169,25 @@ franken-stream watch <query> [OPTIONS]
 
 Options:
   --proxy TEXT              HTTP proxy URL
-  --interactive/--no-interactive
+  -p, --interactive/--no-interactive
                            Enable/disable interactive selection (default: enabled)
+  --legal-only             Search legal sources only
+  -d, --download           Download instead of stream
+  -o OUTPUT                Download output directory
+  -v, --verbose            Show detailed debug info
+```
+
+### `tv`
+
+Search for and stream TV shows with season/episode support.
+
+```bash
+franken-stream tv <query> [OPTIONS]
+
+Options:
+  -s, --season INT         Season number
+  -e, --episode INT        Episode number
+  -p, --proxy TEXT         HTTP proxy URL
 ```
 
 ### `update`
@@ -150,22 +198,61 @@ Refresh provider list from GitHub.
 franken-stream update
 ```
 
+### `test-providers`
+
+Test streaming provider health and response times.
+
+```bash
+franken-stream test-providers [--fast]
+
+Options:
+  --fast                   Quick test (2s timeout instead of 10s)
+```
+
 ### `config`
 
-Display current configuration paths.
+Display current configuration paths and statistics.
 
 ```bash
 franken-stream config
 ```
 
+### `validate`
+
+Validate the providers configuration file.
+
+```bash
+franken-stream validate
+```
+
 ## How It Works
 
-1. **Search Phase**: Queries multiple provider base URLs with your search term
-2. **Parsing**: Extracts titles and links from HTML results using BeautifulSoup
-3. **Selection**: You pick from the results (interactive menu)
-4. **Playback**: 
-   - If embed is found: Opens link in browser/player
-   - If no embed: Falls back to yt-dlp (searches YouTube for full movie)
+### Search & Playback Pipeline
+
+Franken-Stream uses a **4-level fallback chain**:
+
+1. **Configured Providers** (BeautifulSoup parsing)
+   - Queries multiple provider base URLs in parallel
+   - Extracts titles and links from search results
+
+2. **Regex Embed Extraction**
+   - Automatically detects embedded video hosts
+   - Supports vidcloud, vidplay, upstream, streamtape, etc.
+
+3. **DuckDuckGo Search** (if no local results)
+   - Searches the web for streaming links
+   - Useful when providers are outdated
+
+4. **yt-dlp YouTube Search** (final fallback)
+   - Searches YouTube for full movies/shows
+   - Handles 1000+ video embed hosts
+
+### Playback
+
+Once a URL is found:
+- **Direct embeds**: Opens in mpv (with hardware acceleration on Android/Termux)
+- **Detail pages**: Extracts embedded player links
+- **Fallback**: Opens in browser if no player available
 
 ## Error Handling
 

@@ -1,30 +1,27 @@
 """Textual TUI dashboard for franken-stream."""
 
 from typing import Optional
-from pathlib import Path
 
-from textual.app import ComposeResult, SystemCommand
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import (
-    Button,
-    Footer,
     Header,
+    Footer,
+    Static,
     Input,
     Label,
-    Static,
 )
+from textual.containers import Container, Vertical, Horizontal
 from textual.binding import Binding
 from rich.panel import Panel
 from rich.text import Text
-from rich.table import Table
 
 from franken_stream.providers import ProviderManager
 from franken_stream.scraper import ContentScraper
 
 
 class StatusBar(Static):
-    """Bottom status bar showing current status."""
+    """Bottom status bar."""
 
     DEFAULT_CSS = """
     StatusBar {
@@ -33,111 +30,52 @@ class StatusBar(Static):
         background: $surface;
         color: $text;
         border-top: solid $primary;
+        content-align: left middle;
     }
     """
 
     def __init__(self, message: str = "Ready"):
         super().__init__(message)
-        self.message = message
 
     def update_status(self, message: str) -> None:
         """Update status message."""
-        self.message = message
         self.update(message)
-
-
-class Sidebar(Static):
-    """Left sidebar with recent searches and navigation."""
-
-    DEFAULT_CSS = """
-    Sidebar {
-        width: 25%;
-        border-right: solid $primary;
-        background: $panel;
-        padding: 1;
-    }
-    """
-
-    def __init__(self):
-        super().__init__()
-        self.searches = []
-
-    def render(self) -> Panel:
-        """Render sidebar content."""
-        text = Text("Recent Searches\n", style="bold cyan")
-        
-        for i, search in enumerate(self.searches[-5:], 1):
-            text.append(f"{i}. {search[:20]}\n", style="white")
-        
-        text.append("\n\n[bold]Keybindings[/bold]\n", style="bold green")
-        text.append("/ - Search\n", style="dim white")
-        text.append("b - Browse\n", style="dim white")
-        text.append("h - History\n", style="dim white")
-        text.append("u - Update\n", style="dim white")
-        text.append("? - Help\n", style="dim white")
-        text.append("q - Quit\n", style="dim white")
-        
-        return Panel(text, title="Menu", border_style="cyan")
-
-    def add_search(self, query: str) -> None:
-        """Add search to history."""
-        if query not in self.searches:
-            self.searches.append(query)
-
-
-class DashboardContent(Static):
-    """Main dashboard content area."""
-
-    DEFAULT_CSS = """
-    DashboardContent {
-        width: 75%;
-        height: 1fr;
-        background: $background;
-    }
-    """
-
-    def render(self) -> Panel:
-        """Render dashboard grid."""
-        text = Text()
-        text.append("Franken-Stream", style="bold yellow")
-        text.append("\n Terminal Media Streamer\n\n", style="dim")
-        
-        text.append("Categories:\n", style="bold cyan")
-        text.append("  New Releases       |  Popular Movies\n", style="white")
-        text.append("  TV Shows          |  My List\n", style="white")
-        text.append("  Trending          |  Legal Only\n\n", style="white")
-        
-        text.append("Press [bold]/[/bold] to search or use arrow keys to browse", style="green")
-        
-        return Panel(text, title="Dashboard", border_style="green")
 
 
 class SearchScreen(Screen):
     """Full-screen search interface."""
 
     BINDINGS = [
-        Binding("escape", "cancel", "Back", show=True),
-        Binding("enter", "search", "Search", show=True),
+        Binding("escape", "cancel", "Back"),
+        Binding("enter", "search", "Search"),
     ]
 
     DEFAULT_CSS = """
-    SearchScreen {
+    Screen {
         align: center middle;
     }
     
-    #search_input {
+    #search_container {
         width: 60;
+        height: 10;
+        border: solid $primary;
+        background: $surface;
+    }
+    
+    #search_input {
+        width: 100%;
         margin: 1;
     }
     """
 
     def compose(self) -> ComposeResult:
         """Render search screen."""
-        yield Vertical(
-            Label("Search Movies & TV Shows", id="title"),
-            Input(id="search_input", placeholder="Type query..."),
-            id="search_container",
-        )
+        with Vertical(id="search_container"):
+            yield Label("Search Movies & TV Shows")
+            yield Input(
+                id="search_input",
+                placeholder="Type query and press Enter..."
+            )
 
     def on_mount(self) -> None:
         """Focus input on mount."""
@@ -159,33 +97,103 @@ class DashboardScreen(Screen):
     """Main dashboard screen."""
 
     BINDINGS = [
-        Binding("/", "search", "Search", show=True),
-        Binding("b", "browse", "Browse", show=True),
-        Binding("h", "history", "History", show=True),
-        Binding("u", "update", "Update", show=True),
-        Binding("?", "help", "Help", show=True),
-        Binding("q", "quit", "Quit", show=False),
+        Binding("/", "search", "Search"),
+        Binding("b", "browse", "Browse"),
+        Binding("h", "history", "History"),
+        Binding("u", "update", "Update"),
+        Binding("?", "help", "Help"),
+        Binding("q", "quit", "Quit"),
     ]
+
+    DEFAULT_CSS = """
+    DashboardScreen {
+        background: $background;
+    }
+    
+    #sidebar {
+        width: 25;
+        border-right: solid $primary;
+        background: $panel;
+        padding: 1;
+    }
+    
+    #dashboard {
+        width: 1fr;
+        height: 1fr;
+        background: $background;
+    }
+    
+    #status_bar {
+        dock: bottom;
+        height: 1;
+        background: $surface;
+    }
+    """
 
     def compose(self) -> ComposeResult:
         """Render main screen."""
         yield Header()
-        yield Horizontal(
-            Sidebar(id="sidebar"),
-            DashboardContent(id="dashboard"),
-        )
+        with Horizontal():
+            # Sidebar
+            yield Static(
+                self._render_sidebar(),
+                id="sidebar"
+            )
+            # Main dashboard
+            yield Static(
+                self._render_dashboard(),
+                id="dashboard"
+            )
         yield StatusBar(id="status_bar")
         yield Footer()
 
     def on_mount(self) -> None:
         """Initialize screen."""
-        self.app.title = "Franken-Stream - Terminal Media Streamer"
+        self.app.title = "Franken-Stream"
+        self.app.pm = ProviderManager()
+
+    def _render_sidebar(self) -> Panel:
+        """Render sidebar content."""
+        text = Text("RECENT SEARCHES\n", style="bold cyan")
+        text.append("─" * 20 + "\n", style="dim")
+        
+        searches = getattr(self.app, "searches", [])
+        for i, search in enumerate(searches[-5:], 1):
+            text.append(f"{i}. {search[:18]}\n", style="white")
+        
+        text.append("\n[bold cyan]KEYBINDINGS[/bold cyan]\n")
+        text.append("─" * 20 + "\n", style="dim")
+        text.append("/  Search\n", style="dim white")
+        text.append("b  Browse\n", style="dim white")
+        text.append("h  History\n", style="dim white")
+        text.append("u  Update\n", style="dim white")
+        text.append("?  Help\n", style="dim white")
+        text.append("q  Quit\n", style="dim white")
+        
+        return Panel(text, expand=False, border_style="cyan")
+
+    def _render_dashboard(self) -> Panel:
+        """Render dashboard content."""
+        text = Text()
+        text.append("FRANKEN-STREAM\n", style="bold yellow")
+        text.append("Terminal Media Streamer\n\n", style="dim")
+        
+        text.append("CATEGORIES:\n", style="bold cyan")
+        text.append("  New Releases       Popular Movies\n", style="white")
+        text.append("  TV Shows           My List\n", style="white")
+        text.append("  Trending           Legal Only\n\n", style="white")
+        
+        text.append("Press ", style="green")
+        text.append("/", style="bold green")
+        text.append(" to search or ", style="green")
+        text.append("?", style="bold green")
+        text.append(" for help", style="green")
+        
+        return Panel(text, expand=True, border_style="green")
 
     def action_search(self) -> None:
         """Open search screen."""
         self.app.push_screen(SearchScreen())
-        status = self.query_one("#status_bar", StatusBar)
-        status.update_status("Searching...")
 
     def action_browse(self) -> None:
         """Browse categories."""
@@ -202,16 +210,16 @@ class DashboardScreen(Screen):
         status = self.query_one("#status_bar", StatusBar)
         status.update_status("Updating providers...")
         
-        pm = ProviderManager()
-        if pm.update_providers():
-            status.update_status("Providers updated ✓")
-        else:
-            status.update_status("Update failed")
+        if hasattr(self.app, "pm") and self.app.pm:
+            if self.app.pm.update_providers():
+                status.update_status("Providers updated ✓")
+            else:
+                status.update_status("Update failed")
 
     def action_help(self) -> None:
         """Show help."""
         status = self.query_one("#status_bar", StatusBar)
-        status.update_status("Press ? again or see sidebar for keybindings")
+        status.update_status("Press ? for keybindings (see sidebar)")
 
     def action_quit(self) -> None:
         """Quit app."""
@@ -219,14 +227,14 @@ class DashboardScreen(Screen):
 
 
 class FrankenStreamApp:
-    """Main TUI application."""
+    """Main TUI application wrapper."""
 
     def __init__(self):
         """Initialize app."""
         from textual.app import App as TextualApp
 
         class App(TextualApp):
-            """Franken-Stream TUI App."""
+            """Franken-Stream TUI."""
 
             CSS = """
             Screen {
@@ -242,23 +250,17 @@ class FrankenStreamApp:
             }
             """
 
-            BINDINGS = [
-                ("ctrl+c", "quit", "Quit"),
-            ]
+            BINDINGS = [("ctrl+c", "quit", "Quit")]
 
             def __init__(self):
                 super().__init__()
                 self.search_query = None
-                self.pm = ProviderManager()
-                self.scraper = ContentScraper()
+                self.searches = []
+                self.pm = None
 
             def on_mount(self) -> None:
                 """Mount main screen."""
                 self.push_screen(DashboardScreen())
-
-            def action_quit(self) -> None:
-                """Exit application."""
-                self.exit()
 
         self.app = App()
 
@@ -276,4 +278,6 @@ def run_tui() -> None:
         pass
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         raise
