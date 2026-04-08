@@ -42,3 +42,4 @@ htmlcov/
 # Project specific
 *.log
 .franken-stream/
+target/
