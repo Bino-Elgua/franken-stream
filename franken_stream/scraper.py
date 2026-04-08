@@ -151,7 +151,7 @@ class ContentScraper:
             elapsed_ms = (_time.time() - start) * 1000
 
             soup = BeautifulSoup(response.content, "html.parser")
-            items = self._extract_results(soup, verbose=verbose)
+            items = self._extract_results(soup, verbose=verbose, llm_client=self.llm_client, provider_url=base_url)
 
             if verbose:
                 console.log(
@@ -243,9 +243,8 @@ class ContentScraper:
 
         return results
 
-    @staticmethod
     def _extract_results(
-        soup: BeautifulSoup, verbose: bool = False
+        soup: BeautifulSoup, verbose: bool = False, llm_client=None, provider_url=None
     ) -> List[Tuple[str, str]]:
         """
         Extract movie/show titles and links from parsed HTML with fallbacks.
@@ -253,6 +252,8 @@ class ContentScraper:
         Args:
             soup: BeautifulSoup object
             verbose: Print debug info
+            llm_client: Optional LLM client for selector healing
+            provider_url: Provider URL for LLM context
 
         Returns:
             List of (title, url) tuples
@@ -297,6 +298,22 @@ class ContentScraper:
                     if results:
                         break  # Use first selector that worked
 
+            # LLM Selector Healing: If no results and LLM available, ask for help
+            if not results and llm_client and llm_client.enabled and provider_url:
+                healed_selector = ContentScraper._heal_selector_with_llm(
+                    llm_client, provider_url, str(soup)[:2000], verbose
+                )
+                if healed_selector:
+                    matches = soup.select(healed_selector)
+                    if matches:
+                        if verbose:
+                            console.log(f"[green]  LLM healed selector: {healed_selector}")
+                        for link in matches:
+                            text = link.get_text(strip=True)
+                            href = link.get("href", "")
+                            if text and href and len(text) > 2 and len(text) < 100:
+                                results.append((text, href))
+
             # Fallback: Try regex patterns if no results
             if not results:
                 html_str = str(soup)
@@ -324,6 +341,39 @@ class ContentScraper:
             if verbose:
                 console.log(f"[red]Error extracting results:[/red] {e}")
             return []
+
+    @staticmethod
+    def _heal_selector_with_llm(llm_client, provider_url: str, html_fragment: str, verbose: bool = False) -> Optional[str]:
+        """
+        Use LLM to generate a CSS selector when standard selectors fail.
+
+        Args:
+            llm_client: LLM client instance
+            provider_url: Provider URL for context
+            html_fragment: HTML snippet to analyze
+            verbose: Print debug info
+
+        Returns:
+            CSS selector string or None
+        """
+        try:
+            if verbose:
+                console.log("[yellow]  → Asking LLM for selector healing...")
+
+            selector = llm_client.adapt_selector(
+                provider=provider_url,
+                failed_html=html_fragment,
+                target="movie/show title and link pairs"
+            )
+
+            if selector and verbose:
+                console.log(f"[green]  LLM suggested selector: {selector}")
+
+            return selector
+        except Exception as e:
+            if verbose:
+                console.log(f"[red]  LLM selector healing failed: {e}")
+            return None
 
     def fetch_embed_from_page(self, page_url: str, base_url: Optional[str] = None) -> Optional[str]:
         """

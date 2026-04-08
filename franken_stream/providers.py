@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import sqlite3
 import statistics
 import time
 from dataclasses import dataclass, field
@@ -59,6 +60,7 @@ class ProviderManager:
         self.config_dir = Path.home() / ".franken-stream"
         self.config_file = self.config_dir / "providers.json"
         self.health_file = self.config_dir / "provider_health.json"
+        self.health_db = self.config_dir / "provider_health.db"
         self.github_url = (
             "https://raw.githubusercontent.com/"
             "Bino-Elgua/stream-providers/main/providers.json"
@@ -247,29 +249,86 @@ class ProviderManager:
         return providers.get("legal_fallbacks", [])
 
     def _load_health(self) -> Dict[str, ProviderStats]:
-        """Load provider health data from disk."""
+        """Load provider health data from SQLite DB, with JSON fallback."""
+        # Try SQLite first
+        if self.health_db.exists():
+            try:
+                return self._load_health_from_sqlite()
+            except Exception:
+                pass  # Fall back to JSON
+
+        # Fall back to JSON
         if self.health_file.exists():
             try:
                 data = json.loads(self.health_file.read_text())
-                return {k: ProviderStats(**v) for k, v in data.items()}
+                health = {k: ProviderStats(**v) for k, v in data.items()}
+                # Migrate to SQLite
+                self._save_health_to_sqlite(health)
+                return health
             except (json.JSONDecodeError, TypeError):
                 pass
         return {}
 
-    def _save_health(self) -> None:
-        """Persist provider health data to disk."""
+    def _load_health_from_sqlite(self) -> Dict[str, ProviderStats]:
+        """Load health data from SQLite database."""
+        conn = sqlite3.connect(str(self.health_db))
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT url, attempts, successes, response_times_json, last_failure, consecutive_failures
+                FROM provider_health
+            """)
+
+            health = {}
+            for row in cursor.fetchall():
+                url, attempts, successes, response_times_json, last_failure, consecutive_failures = row
+                response_times = json.loads(response_times_json) if response_times_json else []
+                health[url] = ProviderStats(
+                    attempts=attempts,
+                    successes=successes,
+                    response_times_ms=response_times,
+                    last_failure=last_failure,
+                    consecutive_failures=consecutive_failures,
+                )
+            return health
+        finally:
+            conn.close()
+
+    def _save_health_to_sqlite(self, health: Dict[str, ProviderStats]) -> None:
+        """Save health data to SQLite database."""
         self._ensure_config_dir()
-        data = {
-            url: {
-                "attempts": s.attempts,
-                "successes": s.successes,
-                "response_times_ms": s.response_times_ms,
-                "last_failure": s.last_failure,
-                "consecutive_failures": s.consecutive_failures,
-            }
-            for url, s in self.health.items()
-        }
-        self.health_file.write_text(json.dumps(data, indent=2))
+        conn = sqlite3.connect(str(self.health_db))
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS provider_health (
+                    url TEXT PRIMARY KEY,
+                    attempts INTEGER DEFAULT 0,
+                    successes INTEGER DEFAULT 0,
+                    response_times_json TEXT,
+                    last_failure TEXT,
+                    consecutive_failures INTEGER DEFAULT 0
+                )
+            """)
+
+            for url, stats in health.items():
+                response_times_json = json.dumps(stats.response_times_ms)
+                cursor.execute("""
+                    INSERT OR REPLACE INTO provider_health
+                    (url, attempts, successes, response_times_json, last_failure, consecutive_failures)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    url, stats.attempts, stats.successes, response_times_json,
+                    stats.last_failure, stats.consecutive_failures
+                ))
+
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _save_health(self) -> None:
+        """Persist provider health data to SQLite."""
+        self._save_health_to_sqlite(self.health)
 
     def record_result(self, url: str, success: bool, response_ms: float) -> None:
         """Record a provider request outcome for health scoring."""
