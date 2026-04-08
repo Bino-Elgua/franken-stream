@@ -8,16 +8,15 @@ version = "0.1.0"
 description = "Terminal media streamer for movies and TV shows"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
-    {name = "Your Name", email = "you@example.com"}
+    {name = "Bino Elgua", email = "bino.elgua@example.com"}
 ]
 keywords = ["cli", "streaming", "movies", "tv", "media"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -55,6 +54,9 @@ franken-stream = "franken_stream.main:app"
 [tool.setuptools]
 packages = ["franken_stream"]
 "package-data" = {"franken_stream" = ["web_ui/*"]}
+
+[tool.setuptools_scm]
+write_to = "franken_stream/_version.py"
 
 [tool.black]
 line-length = 100
