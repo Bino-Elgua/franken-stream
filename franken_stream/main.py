@@ -54,7 +54,10 @@ def watch(
     try:
         # Load providers
         pm = ProviderManager()
-        bases = pm.get_legal_sources() if legal_only else pm.get_search_bases()
+        if legal_only:
+            bases = pm.get_legal_sources()
+        else:
+            bases = pm.get_ranked_search_bases()
 
         if not bases:
             console.print(
@@ -63,8 +66,8 @@ def watch(
             )
             raise typer.Exit(1)
 
-        # Initialize scraper
-        scraper = ContentScraper(proxy=proxy)
+        # Initialize scraper with health tracking
+        scraper = ContentScraper(proxy=proxy, provider_manager=pm)
 
         # Search for content
         console.print(f"\n[cyan]Searching for:[/cyan] {query}\n")
@@ -131,7 +134,7 @@ def tv(
     """
     try:
         pm = ProviderManager()
-        scraper = ContentScraper(proxy=proxy)
+        scraper = ContentScraper(proxy=proxy, provider_manager=pm)
 
         # Build search query
         search_query = query
@@ -146,7 +149,7 @@ def tv(
         else:
             console.print(f"[cyan]Searching:[/cyan] {query}\n")
 
-        bases = pm.get_search_bases()
+        bases = pm.get_ranked_search_bases()
         results = scraper.search(search_query, bases)
 
         if not results:
@@ -175,27 +178,35 @@ def test_providers(
     """Test provider URLs for health and response time."""
     try:
         pm = ProviderManager()
-        scraper = ContentScraper()
+        scraper = ContentScraper(provider_manager=pm)
 
-        bases = pm.get_search_bases()
+        bases = pm.get_ranked_search_bases()
         if not bases:
             console.print("[red]✗[/red] No providers configured")
             raise typer.Exit(1)
 
-        console.print("[cyan]Testing providers...\n[/cyan]")
+        console.print("[cyan]Testing providers (ranked by reliability)...\n[/cyan]")
 
         table = Table(title="Provider Health Check")
-        table.add_column("URL", style="cyan", width=50)
+        table.add_column("#", style="dim", width=3)
+        table.add_column("URL", style="cyan", width=45)
         table.add_column("Status", style="green")
         table.add_column("Time", style="magenta")
+        table.add_column("Rate", style="yellow", width=6)
+        table.add_column("Avg", style="blue", width=8)
 
         timeout = 2 if fast else 10
         healthy_count = 0
         slow_count = 0
         dead_count = 0
 
-        for url in bases:
+        for rank, url in enumerate(bases, 1):
             is_healthy, elapsed = scraper.test_provider_url(url, timeout)
+            pm.record_result(url, is_healthy, elapsed * 1000)
+
+            stats = pm.health.get(url)
+            rate_str = f"{stats.success_rate:.0%}" if stats else "—"
+            avg_str = f"{stats.avg_response_ms:.0f}ms" if stats else "—"
 
             if is_healthy:
                 if elapsed > 5:
@@ -210,18 +221,17 @@ def test_providers(
                 dead_count += 1
                 time_str = "Timeout"
 
-            table.add_row(url[:50], status, time_str)
+            table.add_row(str(rank), url[:45], status, time_str, rate_str, avg_str)
 
         console.print(table)
 
-        # Summary
         console.print(f"\n[green]Healthy:[/green] {healthy_count}")
         console.print(f"[yellow]Slow:[/yellow] {slow_count}")
         console.print(f"[red]Dead:[/red] {dead_count}")
 
         if dead_count > 0:
             console.print(
-                "\n[yellow]→[/yellow] Consider removing dead providers from config"
+                "\n[yellow]→[/yellow] Dead providers will be deprioritized automatically"
             )
 
     except Exception as e:

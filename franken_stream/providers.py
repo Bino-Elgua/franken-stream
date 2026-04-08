@@ -2,7 +2,10 @@
 
 import json
 import os
+import statistics
 import time
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,6 +18,38 @@ console = Console()
 CACHE_TTL = 86400
 
 
+@dataclass
+class ProviderStats:
+    """Tracks health metrics for a single provider."""
+
+    attempts: int = 0
+    successes: int = 0
+    response_times_ms: List[float] = field(default_factory=list)
+    last_failure: Optional[str] = None  # ISO format string
+    consecutive_failures: int = 0
+
+    @property
+    def success_rate(self) -> float:
+        return self.successes / self.attempts if self.attempts > 0 else 0.5
+
+    @property
+    def avg_response_ms(self) -> float:
+        if self.response_times_ms:
+            return statistics.median(self.response_times_ms[-10:])
+        return 1000.0
+
+    def record_attempt(self, success: bool, response_ms: float) -> None:
+        self.attempts += 1
+        if success:
+            self.successes += 1
+            self.consecutive_failures = 0
+        else:
+            self.consecutive_failures += 1
+            self.last_failure = datetime.now().isoformat()
+        self.response_times_ms.append(response_ms)
+        self.response_times_ms = self.response_times_ms[-100:]
+
+
 class ProviderManager:
     """Handles loading, caching, and updating streaming providers."""
 
@@ -22,16 +57,13 @@ class ProviderManager:
         """Initialize provider manager with config directory."""
         self.config_dir = Path.home() / ".franken-stream"
         self.config_file = self.config_dir / "providers.json"
-        # CUSTOMIZE: Replace with your own GitHub providers repo:
-        # self.github_url = (
-        #     "https://raw.githubusercontent.com/"
-        #     "YOUR_ACTUAL_USERNAME/stream-providers/main/providers.json"
-        # )
+        self.health_file = self.config_dir / "provider_health.json"
         self.github_url = (
             "https://raw.githubusercontent.com/"
             "Bino-Elgua/stream-providers/main/providers.json"
         )
         self.providers: Optional[Dict[str, Any]] = None
+        self.health: Dict[str, ProviderStats] = self._load_health()
 
     def _ensure_config_dir(self) -> None:
         """Create config directory if it doesn't exist."""
@@ -145,6 +177,75 @@ class ProviderManager:
         """Get list of legal streaming sources."""
         providers = self.load_providers()
         return providers.get("legal_fallbacks", [])
+
+    def _load_health(self) -> Dict[str, ProviderStats]:
+        """Load provider health data from disk."""
+        if self.health_file.exists():
+            try:
+                data = json.loads(self.health_file.read_text())
+                return {k: ProviderStats(**v) for k, v in data.items()}
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return {}
+
+    def _save_health(self) -> None:
+        """Persist provider health data to disk."""
+        self._ensure_config_dir()
+        data = {
+            url: {
+                "attempts": s.attempts,
+                "successes": s.successes,
+                "response_times_ms": s.response_times_ms,
+                "last_failure": s.last_failure,
+                "consecutive_failures": s.consecutive_failures,
+            }
+            for url, s in self.health.items()
+        }
+        self.health_file.write_text(json.dumps(data, indent=2))
+
+    def record_result(self, url: str, success: bool, response_ms: float) -> None:
+        """Record a provider request outcome for health scoring."""
+        if url not in self.health:
+            self.health[url] = ProviderStats()
+        self.health[url].record_attempt(success, response_ms)
+        self._save_health()
+
+    def get_ranked_search_bases(self) -> List[str]:
+        """Return search base URLs sorted by reliability score (best first)."""
+        bases = self.get_search_bases()
+
+        def _score(url: str) -> float:
+            stats = self.health.get(url, ProviderStats())
+            reliability = stats.success_rate * 0.7
+            speed = (1.0 / (1.0 + stats.avg_response_ms / 1000)) * 0.3
+            penalty = 0.0
+            if stats.consecutive_failures > 2:
+                penalty += 0.3 * stats.consecutive_failures
+            if stats.last_failure:
+                try:
+                    last_fail = datetime.fromisoformat(stats.last_failure)
+                    if datetime.now() - last_fail < timedelta(minutes=5):
+                        penalty += 0.5
+                except ValueError:
+                    pass
+            return reliability + speed - penalty
+
+        return sorted(bases, key=_score, reverse=True)
+
+    def get_health_summary(self) -> List[Dict[str, Any]]:
+        """Return health stats for all tracked providers."""
+        summary = []
+        for url in self.get_search_bases():
+            stats = self.health.get(url, ProviderStats())
+            summary.append({
+                "url": url,
+                "attempts": stats.attempts,
+                "success_rate": round(stats.success_rate, 2),
+                "avg_ms": round(stats.avg_response_ms, 1),
+                "consecutive_failures": stats.consecutive_failures,
+                "last_failure": stats.last_failure,
+            })
+        return summary
 
     def validate_config(self) -> bool:
         """

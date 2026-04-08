@@ -2,6 +2,8 @@
 
 import re
 import subprocess
+import time as _time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
 from urllib.parse import quote
 
@@ -31,27 +33,68 @@ EMBED_PATTERNS = [
 class ContentScraper:
     """Scrapes streaming content from various providers."""
 
-    def __init__(self, proxy: Optional[str] = None, user_agent: Optional[str] = None):
+    def __init__(self, proxy: Optional[str] = None, user_agent: Optional[str] = None,
+                 provider_manager=None):
         """
         Initialize scraper with optional proxy and custom User-Agent.
 
         Args:
             proxy: Optional proxy URL (e.g., http://proxy.example.com:8080)
             user_agent: Custom User-Agent header
+            provider_manager: Optional ProviderManager for health tracking
         """
         self.proxy = proxy
         self.user_agent = user_agent or DEFAULT_USER_AGENT
+        self.provider_manager = provider_manager
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": self.user_agent})
 
         if proxy:
             self.session.proxies = {"http": proxy, "https": proxy}
 
+    def _fetch_provider(
+        self, base_url: str, encoded_query: str, verbose: bool = False
+    ) -> Tuple[str, List[Tuple[str, str]], float]:
+        """Fetch results from a single provider (thread-safe)."""
+        full_url = f"{base_url}{encoded_query}"
+        start = _time.time()
+        try:
+            if verbose:
+                console.log(f"[cyan]→ Searching: {full_url}")
+            else:
+                console.log(f"Searching: {full_url[:60]}...")
+
+            response = self.session.get(full_url, timeout=10)
+            response.raise_for_status()
+            elapsed_ms = (_time.time() - start) * 1000
+
+            soup = BeautifulSoup(response.content, "html.parser")
+            items = self._extract_results(soup, verbose=verbose)
+
+            if verbose:
+                console.log(
+                    f"[green]✓ Found {len(items)} results from "
+                    f"{base_url} ({elapsed_ms:.0f}ms)"
+                )
+            else:
+                console.log(f"[green]✓[/green] Found {len(items)} results")
+
+            return base_url, items, elapsed_ms
+
+        except Exception as e:
+            elapsed_ms = (_time.time() - start) * 1000
+            if verbose:
+                console.log(f"[yellow]⚠ {base_url}: {e}")
+            return base_url, [], elapsed_ms
+
     def search(
         self, query: str, base_urls: List[str], verbose: bool = False
     ) -> List[Tuple[str, str]]:
         """
-        Search for content across multiple providers.
+        Search for content across multiple providers concurrently.
+
+        Fires all provider requests in parallel via ThreadPoolExecutor,
+        records health stats, and returns aggregated results.
 
         Args:
             query: Search query (e.g., "Inception")
@@ -64,44 +107,20 @@ class ContentScraper:
         results = []
         encoded_query = quote(query.replace(" ", "+"))
 
-        for base_url in base_urls:
-            try:
-                full_url = f"{base_url}{encoded_query}"
-                if verbose:
-                    console.log(f"[cyan]→ Searching: {full_url}")
-                else:
-                    console.log(f"Searching: {full_url[:60]}...")
-                
-                response = self.session.get(full_url, timeout=10)
-                response.raise_for_status()
-
-                soup = BeautifulSoup(response.content, "html.parser")
-                items = self._extract_results(soup, verbose=verbose)
+        with ThreadPoolExecutor(max_workers=min(len(base_urls), 6)) as executor:
+            futures = {
+                executor.submit(
+                    self._fetch_provider, url, encoded_query, verbose
+                ): url
+                for url in base_urls
+            }
+            for future in as_completed(futures):
+                base_url, items, elapsed_ms = future.result()
                 results.extend(items)
-                
-                if verbose:
-                    console.log(f"[green]✓ Found {len(items)} results from {base_url}")
-                else:
-                    console.log(f"[green]✓[/green] Found {len(items)} results")
-
-            except requests.exceptions.ConnectionError as e:
-                if verbose:
-                    console.log(f"[yellow]⚠ Connection failed for {base_url}: {e}")
-                # Silently skip connection errors
-            except requests.exceptions.Timeout:
-                if verbose:
-                    console.log(f"[yellow]⚠ Timeout searching {base_url}")
-                # Silently skip timeouts
-            except requests.exceptions.HTTPError as e:
-                if verbose:
-                    console.log(f"[yellow]⚠ HTTP error {e.response.status_code} for {base_url}")
-                # Silently skip HTTP errors
-            except requests.RequestException as e:
-                if verbose:
-                    console.log(f"[yellow]⚠[/yellow] Error searching {base_url}: {e}")
-            except Exception as e:
-                if verbose:
-                    console.log(f"[red]✗[/red] Parsing error: {e}")
+                if self.provider_manager:
+                    self.provider_manager.record_result(
+                        base_url, len(items) > 0, elapsed_ms
+                    )
 
         return results
 
