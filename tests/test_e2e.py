@@ -91,25 +91,53 @@ class TestWebUI:
         assert result.returncode == 0
         assert "web" in result.stdout.lower()
 
-    @patch('franken_stream.web.HTTPServer.serve_forever')
-    def test_web_server_start(self, mock_serve):
-        """Test web server can start (mocked to not actually serve)."""
-        mock_serve.side_effect = KeyboardInterrupt  # Simulate Ctrl+C
+    def test_web_server_start(self):
+        """Test web server can start."""
+        import signal
+        import time
 
-        result = subprocess.run(
+        # Start the server process
+        proc = subprocess.Popen(
             [sys.executable, "-m", "franken_stream.main", "web", "--host", "127.0.0.1", "--port", "8001"],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             env={"PYTHONPATH": str(Path(__file__).parent.parent)},
-            cwd=Path(__file__).parent.parent,
-            timeout=5  # Timeout after 5 seconds
+            cwd=Path(__file__).parent.parent
         )
-        # Should start successfully and be interrupted by our mock
-        assert "Starting Web UI" in result.stdout or "Serving" in result.stdout
+
+        # Wait a bit for startup
+        time.sleep(2)
+
+        # Check if it started successfully by reading stdout
+        if proc.poll() is None:  # Still running
+            proc.terminate()
+            proc.wait(timeout=5)
+            stdout, stderr = proc.communicate()
+            assert "Starting Franken-Stream Web UI" in stdout
+        else:
+            # Process already exited
+            stdout, stderr = proc.communicate()
+            assert proc.returncode == 0 or "Starting Franken-Stream Web UI" in stdout
 
 
 class TestSecurity:
     """Security-focused tests."""
+
+    def run_command(self, args, input_text=None):
+        """Run a CLI command and return result."""
+        cmd = [sys.executable, "-m", "franken_stream.main"] + args
+        env = {"PYTHONPATH": str(Path(__file__).parent.parent)}
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            input=input_text,
+            env={**env, **dict(os.environ)},
+            cwd=Path(__file__).parent.parent
+        )
+        return result
 
     def test_no_shell_injection_in_watch(self):
         """Test that watch command doesn't allow shell injection."""
@@ -135,6 +163,21 @@ class TestSecurity:
 
 class TestErrorHandling:
     """Test error handling scenarios."""
+
+    def run_command(self, args, input_text=None):
+        """Run a CLI command and return result."""
+        cmd = [sys.executable, "-m", "franken_stream.main"] + args
+        env = {"PYTHONPATH": str(Path(__file__).parent.parent)}
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            input=input_text,
+            env={**env, **dict(os.environ)},
+            cwd=Path(__file__).parent.parent
+        )
+        return result
 
     @patch('franken_stream.providers.ProviderManager.load_providers')
     def test_corrupted_config_handling(self, mock_load):
