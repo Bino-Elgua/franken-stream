@@ -3,8 +3,12 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+import typer
+
 from franken_stream.providers import ProviderManager
 from franken_stream.scraper import ContentScraper
+
+app = typer.Typer(help="Web UI server commands")
 
 WEB_UI_DIR = Path(__file__).resolve().parent / "web_ui"
 INDEX_FILE = WEB_UI_DIR / "index.html"
@@ -148,3 +152,13 @@ def run_server(host: str = "127.0.0.1", port: int = 8000):
     except KeyboardInterrupt:
         print("\nShutting down web server...")
         server.server_close()
+
+
+@app.callback(invoke_without_command=True)
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind the web server."),
+    port: int = typer.Option(8000, "--port", "-p", help="Port for the web server."),
+) -> None:
+    """Start the Franken-Stream Web UI server."""
+    typer.echo(f"Starting Franken-Stream Web UI at http://{host}:{port}")
+    run_server(host=host, port=port)
