@@ -1,0 +1,27 @@
+version = "2.0"
+
+[llm]
+enabled = true
+endpoint = "http://localhost:11434"
+fallback_on_failure = true
+
+[cache]
+search_ttl_minutes = 60
+metadata_ttl_hours = 24
+max_size_mb = 500
+
+[[provider]]
+name = "fmovies"
+base_url = "https://fmovies.to/search?keyword={query}"
+enabled = true
+priority = 1
+legal = false
+
+[[provider]]
+name = "solarmovie"
+base_url = "https://solarmovie.pe/search/{query}"
+enabled = false
+priority = 3
+legal = false
+
+embed_fallbacks = ["vidcloud9.com", "vidplay.online", "upstream.to", "mycloud", "streamtape.com"]

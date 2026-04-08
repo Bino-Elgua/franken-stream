@@ -2,7 +2,7 @@ mod routes;
 mod sidecar;
 mod state;
 
-use axum::{routing::get, Router};
+use axum::{routing::{get, post}, Router};
 use state::AppState;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
@@ -26,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/api/search", get(routes::search::search_stream))
         .route("/api/health", get(routes::health::health_check))
+        .route("/api/openclaw", post(routes::openclaw::handle_intent))
         .layer(cors)
         .with_state(state);
 

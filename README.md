@@ -44,6 +44,14 @@ pip install franken-stream
 franken-stream
 ```
 
+### Web UI
+```bash
+# Start the browser-based Web UI locally
+franken-stream web --host 127.0.0.1 --port 8000
+```
+
+Then open `http://127.0.0.1:8000` in your browser.
+
 ### CLI Commands
 ```bash
 # Search and stream a movie
@@ -118,6 +126,8 @@ Providers are stored at `~/.franken-stream/providers.json`:
 **First run**: The app will attempt to download providers from GitHub. If that fails, it loads defaults from the config file above.
 
 **To update**: Run `franken-stream update` (pulls fresh list from your GitHub providers repo)
+
+You can also use `~/.franken-stream/providers.toml` instead of `providers.json` for richer provider definitions. Use `{query}` in `base_url` to interpolate the search term.
 
 ### Custom Providers
 

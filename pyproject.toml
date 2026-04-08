@@ -36,6 +36,7 @@ dependencies = [
     "yt-dlp>=2023.0.0",
     "rich>=13.0.0",
     "textual>=0.40.0",
+    "tomli>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -51,10 +52,11 @@ franken-stream = "franken_stream.main:app"
 
 [tool.setuptools]
 packages = ["franken_stream"]
+"package-data" = {"franken_stream" = ["web_ui/*"]}
 
 [tool.black]
 line-length = 100
-target-version = ['py38']
+target-version = ["py38"]
 
 [tool.isort]
 profile = "black"

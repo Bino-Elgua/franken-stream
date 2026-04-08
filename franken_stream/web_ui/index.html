@@ -180,7 +180,7 @@
         );
         
         // Neon Button Component
-        const NeonButton = ({ children, onClick, variant = 'cyan', size = 'md', className = '' }) => {
+        const NeonButton = ({ children, onClick, variant = 'cyan', size = 'md', className = '', title = '' }) => {
             const colors = {
                 cyan: 'from-cyan-400 to-blue-500 shadow-cyan-500/50',
                 purple: 'from-purple-400 to-pink-500 shadow-purple-500/50',
@@ -196,6 +196,7 @@
             
             return (
                 <motion.button
+                    title={title}
                     onClick={onClick}
                     className={`relative group overflow-hidden rounded-lg font-orbitron font-semibold tracking-wider ${sizes[size]} ${className}`}
                     whileHover={{ scale: 1.05 }}
@@ -252,6 +253,7 @@
                             <input
                                 ref={inputRef}
                                 type="text"
+                                title="Enter a movie or show name and press SEARCH."
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
                                 onFocus={() => setIsFocused(true)}
@@ -264,6 +266,7 @@
                                 {query && (
                                     <motion.button
                                         type="button"
+                                        title="Clear the current search query"
                                         initial={{ opacity: 0, scale: 0 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         exit={{ opacity: 0, scale: 0 }}
@@ -277,7 +280,7 @@
                                 )}
                             </AnimatePresence>
                             
-                            <NeonButton variant="cyan" size="sm" className="ml-2">
+                            <NeonButton title="Search available providers for this query." variant="cyan" size="sm" className="ml-2">
                                 SEARCH
                             </NeonButton>
                         </div>
@@ -314,6 +317,7 @@
                                     {['Dune: Part Three', 'Cyberpunk: Edgerunners', 'The Matrix Resurrections'].map((item, i) => (
                                         <motion.div
                                             key={item}
+                                            title={`Use this trending query: ${item}`}
                                             initial={{ opacity: 0, x: -20 }}
                                             animate={{ opacity: 1, x: 0 }}
                                             transition={{ delay: i * 0.1 }}
@@ -363,6 +367,7 @@
             
             return (
                 <motion.div
+                    title={`Open details for ${item.title} and view stream options.`}
                     layout
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -467,7 +472,7 @@
         // AI Chat Sidebar
         const AIChat = ({ isOpen, onClose }) => {
             const [messages, setMessages] = useState([
-                { id: 1, type: 'ai', text: 'Neural interface initialized. What would you like to watch today?', time: '12:21' }
+                { id: 1, type: 'ai', text: 'Search assistant ready. Enter a title to discover matching streams.', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
             ]);
             const [input, setInput] = useState('');
             const messagesEndRef = useRef(null);
@@ -478,37 +483,51 @@
             
             useEffect(scrollToBottom, [messages]);
             
-const sendMessage = async () => {
-                    if (!input.trim()) return;
-                    
-                    const userMessage = {
-                        id: messages.length + 1,
-                        type: 'user',
-                        text: input,
-                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    };
-
-                    setMessages(prev => [...prev, userMessage]);
-                    setInput('');
-                    addMessage('Searching providers for your request...');
-
-                    try {
-                        const response = await fetch('/api/search', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ query: input }),
-                        });
-                        if (!response.ok) throw new Error('Search request failed');
-                        const data = await response.json();
-                        const count = Array.isArray(data.results) ? data.results.length : 0;
-                        const providers = Array.from(new Set((data.results || []).map((item) => item.provider))).slice(0, 3);
-                        const resultText = count > 0
-                            ? `Found ${count} result${count === 1 ? '' : 's'} across ${providers.length} provider${providers.length === 1 ? '' : 's'}${providers.length ? `: ${providers.join(', ')}` : ''}.`
-                            : `No search results found for "${input}". Try a different title.`;
-                        addMessage(resultText);
-                    } catch (error) {
-                        addMessage('Unable to reach the search service. Please try again in a moment.');
+            const addMessage = (content, type = 'ai') => {
+                setMessages(prev => [
+                    ...prev,
+                    {
+                        id: prev.length + 1,
+                        type,
+                        text: content,
+                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    },
+                ]);
+            };
+            
+            const sendMessage = async () => {
+                if (!input.trim()) return;
+                
+                const userMessage = {
+                    id: messages.length + 1,
+                    type: 'user',
+                    text: input,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                };
+                
+                setMessages(prev => [...prev, userMessage]);
+                setInput('');
+                addMessage('Searching providers for your request...');
+                
+                try {
+                    const response = await fetch('/api/search', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: input }),
+                    });
+                    if (!response.ok) {
+                        throw new Error('Search request failed');
                     }
+                    const data = await response.json();
+                    const count = Array.isArray(data.results) ? data.results.length : 0;
+                    const providers = Array.from(new Set((data.results || []).map((item) => item.provider))).slice(0, 3);
+                    const resultText = count > 0
+                        ? `Found ${count} result${count === 1 ? '' : 's'} across ${providers.length} provider${providers.length === 1 ? '' : 's'}${providers.length ? `: ${providers.join(', ')}` : ''}.` 
+                        : `No search results found for "${input}". Try a different title.`;
+                    addMessage(resultText);
+                } catch (error) {
+                    addMessage('Unable to reach the search service. Please try again in a moment.');
+                }
             };
             
             return (
@@ -537,7 +556,7 @@ const sendMessage = async () => {
                                         </p>
                                     </div>
                                 </div>
-                                <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+                                <button title="Close search assistant" onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
@@ -571,13 +590,15 @@ const sendMessage = async () => {
                                 <div className="relative">
                                     <input
                                         type="text"
+                                        title="Type your question about movies or shows for the AI assistant"
                                         value={input}
                                         onChange={(e) => setInput(e.target.value)}
                                         onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                                        placeholder="Ask the neural network..."
+                                        placeholder="Ask for a movie or show title..."
                                         className="w-full bg-black/40 border border-cyan-500/30 rounded-xl px-4 py-3 pr-12 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400 transition-colors"
                                     />
                                     <button
+                                        title="Send your message to the AI assistant"
                                         onClick={sendMessage}
                                         className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/40 flex items-center justify-center transition-colors"
                                     >
@@ -615,9 +636,10 @@ const sendMessage = async () => {
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Video placeholder */}
-                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
+                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-black flex flex-col items-center justify-center text-center p-6">
                             {!isPlaying ? (
                                 <motion.button
+                                    title="Play the selected preview stream"
                                     whileHover={{ scale: 1.1 }}
                                     whileTap={{ scale: 0.9 }}
                                     onClick={() => setIsPlaying(true)}
@@ -630,12 +652,39 @@ const sendMessage = async () => {
                             ) : (
                                 <div className="text-cyan-400 font-orbitron text-2xl glitch">STREAMING...</div>
                             )}
+
+                            <div className="mt-6 text-left w-full max-w-3xl text-sm text-gray-300">
+                                <p className="mb-2 text-white text-base">
+                                    <strong>Source:</strong> {item.embedUrl ? 'Embed stream' : 'Original page' }
+                                </p>
+                                <p className="break-words mb-4">
+                                    {item.loading ? 'Looking up the best available playback URL...' : item.embedUrl || item.url}
+                                </p>
+                                <div className="flex flex-wrap justify-center gap-3">
+                                    <button
+                                        title="Open the selected stream source in your browser"
+                                        onClick={() => window.open(item.embedUrl || item.url, '_blank')}
+                                        className="rounded-lg bg-cyan-500/20 border border-cyan-400 px-4 py-2 text-sm text-cyan-200 hover:bg-cyan-500/30 transition"
+                                    >
+                                        Open in Browser
+                                    </button>
+                                    {item.embedUrl && (
+                                        <button
+                                            title="Open the resolved embed URL"
+                                            onClick={() => window.open(item.embedUrl, '_blank')}
+                                            className="rounded-lg bg-purple-500/20 border border-purple-400 px-4 py-2 text-sm text-purple-200 hover:bg-purple-500/30 transition"
+                                        >
+                                            Open Embed URL
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                         
                         {/* Controls overlay */}
                         <div className="absolute inset-x-0 bottom-0 p-6 bg-gradient-to-t from-black/90 to-transparent">
                             {/* Progress bar */}
-                            <div className="relative h-1 bg-gray-700 rounded-full mb-4 cursor-pointer group">
+                            <div title="Click to seek to position" className="relative h-1 bg-gray-700 rounded-full mb-4 cursor-pointer group">
                                 <motion.div 
                                     className="absolute h-full bg-gradient-to-r from-cyan-400 to-purple-500 rounded-full"
                                     style={{ width: `${progress}%` }}
@@ -647,7 +696,7 @@ const sendMessage = async () => {
                             
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4">
-                                    <button onClick={() => setIsPlaying(!isPlaying)} className="text-white hover:text-cyan-400 transition-colors">
+                                    <button title="Toggle playback" onClick={() => setIsPlaying(!isPlaying)} className="text-white hover:text-cyan-400 transition-colors">
                                         {isPlaying ? (
                                             <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
                                                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -660,7 +709,7 @@ const sendMessage = async () => {
                                     </button>
                                     
                                     {/* Volume */}
-                                    <div className="flex items-center gap-2 group">
+                                    <div title="Adjust volume level" className="flex items-center gap-2 group">
                                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                                         </svg>
@@ -673,12 +722,12 @@ const sendMessage = async () => {
                                 </div>
                                 
                                 <div className="flex items-center gap-4">
-                                    <button className="text-gray-400 hover:text-white transition-colors">
+                                    <button title="Toggle fullscreen styling" className="text-gray-400 hover:text-white transition-colors">
                                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                                         </svg>
                                     </button>
-                                    <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+                                    <button title="Close the video preview" onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
                                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                         </svg>
@@ -689,6 +738,7 @@ const sendMessage = async () => {
                         
                         {/* Close button */}
                         <button 
+                            title="Close the video preview"
                             onClick={onClose}
                             className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white hover:bg-cyan-500/20 hover:text-cyan-400 transition-all flex items-center justify-center"
                         >
@@ -721,6 +771,7 @@ const sendMessage = async () => {
                         {providers.map((provider, i) => (
                             <motion.div
                                 key={provider.name}
+                                title={`Provider ${provider.name}: ${Math.round(provider.successRate * 100)}% success rate, ${provider.latency}ms average latency.`}
                                 initial={{ opacity: 0, scale: 0.9 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ delay: i * 0.05 }}
@@ -766,8 +817,10 @@ const sendMessage = async () => {
             const [chatOpen, setChatOpen] = useState(false);
             const [activeTab, setActiveTab] = useState('discover');
             
-            // Mock data
-            const mockProviders = [
+            const [providers, setProviders] = useState([]);
+            const [errorMessage, setErrorMessage] = useState('');
+
+            const providerList = providers.length ? providers : [
                 { name: 'FMovies', status: 'online', successRate: 0.92, latency: 245 },
                 { name: 'SolarMovie', status: 'online', successRate: 0.87, latency: 312 },
                 { name: 'MyFlixer', status: 'online', successRate: 0.78, latency: 189 },
@@ -775,36 +828,88 @@ const sendMessage = async () => {
                 { name: 'CineBy', status: 'online', successRate: 0.95, latency: 156 },
                 { name: 'Yuppow', status: 'online', successRate: 0.81, latency: 278 },
             ];
-            
-            const mockResults = [
-                { id: 1, title: "Dune: Part Two", year: 2024, type: "Movie", rating: 8.9, quality: "4K HDR" },
-                { id: 2, title: "Cyberpunk: Edgerunners", year: 2022, type: "Series", rating: 9.1, quality: "1080p" },
-                { id: 3, title: "The Creator", year: 2023, type: "Movie", rating: 7.8, quality: "4K" },
-                { id: 4, title: "Neon Genesis Evangelion", year: 1995, type: "Anime", rating: 9.3, quality: "Remastered" },
-                { id: 5, title: "Blade Runner 2049", year: 2017, type: "Movie", rating: 8.5, quality: "4K HDR" },
-                { id: 6, title: "Severance", year: 2022, type: "Series", rating: 8.7, quality: "4K" },
-                { id: 7, title: "Everything Everywhere All at Once", year: 2022, type: "Movie", rating: 9.0, quality: "4K" },
-                { id: 8, title: "Arcane", year: 2021, type: "Series", rating: 9.2, quality: "4K HDR" },
-            ];
-            
-            const handleSearch = (query) => {
+
+            useEffect(() => {
+                fetch('/api/health')
+                    .then((res) => {
+                        if (!res.ok) throw new Error('Failed to load providers');
+                        return res.json();
+                    })
+                    .then((data) => {
+                        if (data && Array.isArray(data.providers)) {
+                            setProviders(data.providers.map((provider) => ({
+                                name: provider.url,
+                                status: provider.success_rate >= 0.4 ? 'online' : 'offline',
+                                successRate: provider.success_rate,
+                                latency: provider.avg_ms || 0,
+                            })));
+                        }
+                    })
+                    .catch(() => {
+                        // Keep fallback providers if health endpoint fails
+                    });
+            }, []);
+
+            const handleSearch = async (query) => {
                 setSearchQuery(query);
                 setIsSearching(true);
-                
-                // Simulate streaming results
                 setResults([]);
-                let index = 0;
-                const interval = setInterval(() => {
-                    if (index >= mockResults.length) {
-                        clearInterval(interval);
-                        setIsSearching(false);
+                setErrorMessage('');
+
+                try {
+                    const response = await fetch('/api/search', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Search request failed');
+                    }
+
+                    const data = await response.json();
+                    const items = Array.isArray(data.results)
+                        ? data.results.map((item, index) => ({
+                              id: index + 1,
+                              title: item.title,
+                              url: item.url,
+                              provider: item.provider || 'unknown',
+                              year: item.year || '2024',
+                              type: item.type || 'Movie',
+                              rating: item.rating || 8.0,
+                              quality: item.quality || 'HD',
+                              poster: item.poster || `https://picsum.photos/300/450?random=${index}`,
+                          }))
+                        : [];
+
+                    setResults(items);
+                } catch (error) {
+                    setErrorMessage('Search failed. Please try again.');
+                    setResults([]);
+                } finally {
+                    setIsSearching(false);
+                }
+            };
+
+            const handleSelectItem = async (item) => {
+                setSelectedItem({ ...item, loading: true, embedUrl: null });
+                try {
+                    const response = await fetch('/api/embed', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: item.url, base_url: item.provider }),
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        setSelectedItem({ ...item, loading: false, embedUrl: data.embed_url || null });
                         return;
                     }
-                    setResults(prev => [...prev, mockResults[index]]);
-                    index++;
-                }, 200);
+                } catch (error) {
+                    // ignore and keep item URL
+                }
+                setSelectedItem({ ...item, loading: false, embedUrl: null });
             };
-            
+
             return (
                 <div className="min-h-screen relative overflow-hidden font-inter">
                     <ParticleField />
@@ -833,7 +938,7 @@ const sendMessage = async () => {
                                     <h1 className="text-xl font-orbitron font-bold text-white tracking-wider">
                                         FRANKEN<span className="text-cyan-400">STREAM</span>
                                     </h1>
-                                    <p className="text-xs text-gray-500 font-mono">v2.0.1 NEURAL INTERFACE</p>
+                                    <p className="text-xs text-gray-500 font-mono">v2.0.1 Search Interface</p>
                                 </div>
                             </div>
                             
@@ -841,6 +946,7 @@ const sendMessage = async () => {
                                 {['discover', 'movies', 'series', 'anime', 'history'].map((tab) => (
                                     <button
                                         key={tab}
+                                        title={`Switch to the ${tab} tab`}
                                         onClick={() => setActiveTab(tab)}
                                         className={`relative text-sm font-medium transition-colors ${
                                             activeTab === tab ? 'text-cyan-400' : 'text-gray-400 hover:text-white'
@@ -859,6 +965,7 @@ const sendMessage = async () => {
                             
                             <div className="flex items-center gap-4">
                                 <motion.button
+                                    title="Open the AI search assistant for smart search help."
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                     onClick={() => setChatOpen(!chatOpen)}
@@ -887,17 +994,17 @@ const sendMessage = async () => {
                             >
                                 <h2 className="text-4xl md:text-5xl font-orbitron font-bold mb-4">
                                     <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400">
-                                        Neural Stream Discovery
+                                        Stream Search
                                     </span>
                                 </h2>
-                                <p className="text-gray-400 text-lg">Search across 9 providers with AI-powered recommendations</p>
+                                <p className="text-gray-400 text-lg">Search across 9 providers for movies and shows in real time</p>
                             </motion.div>
                             
-                            <NeuralSearch onSearch={handleSearch} isListening={false} />
+                            <SearchBar onSearch={handleSearch} isListening={false} />
                         </div>
                         
                         {/* Provider Status */}
-                        <ProviderStatus providers={mockProviders} />
+                        <ProviderStatus providers={providerList} />
                         
                         {/* Results Grid */}
                         <div className="mt-8">
@@ -912,7 +1019,7 @@ const sendMessage = async () => {
                                             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                                             className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full"
                                         />
-                                        <span className="text-sm font-mono">Scanning neural network...</span>
+                                        <span className="text-sm font-mono">Searching providers...</span>
                                     </div>
                                 )}
                             </div>
@@ -927,7 +1034,7 @@ const sendMessage = async () => {
                                             key={item.id} 
                                             item={item} 
                                             index={index}
-                                            onClick={() => setSelectedItem(item)}
+                                            onClick={() => handleSelectItem(item)}
                                         />
                                     ))}
                                 </AnimatePresence>
@@ -944,7 +1051,7 @@ const sendMessage = async () => {
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                         </svg>
                                     </div>
-                                    <p className="text-gray-500 text-lg">Enter a search query to begin neural discovery</p>
+                                    <p className="text-gray-500 text-lg">Enter a search query to begin discovery</p>
                                 </motion.div>
                             )}
                         </div>
@@ -966,7 +1073,7 @@ const sendMessage = async () => {
                     {/* Footer */}
                     <footer className="relative z-10 border-t border-cyan-500/10 py-8 px-6">
                         <div className="max-w-7xl mx-auto flex items-center justify-between text-sm text-gray-500">
-                            <p>Franken-Stream v2.0 • Neural Interface</p>
+                            <p>Franken-Stream v2.0 • Search Assistant</p>
                             <div className="flex items-center gap-4">
                                 <span className="flex items-center gap-2">
                                     <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />

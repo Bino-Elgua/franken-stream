@@ -4,3 +4,4 @@ beautifulsoup4>=4.11.0
 yt-dlp>=2023.0.0
 rich>=13.0.0
 textual>=0.40.0
+tomli>=2.0.0

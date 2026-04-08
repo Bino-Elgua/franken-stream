@@ -12,6 +12,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict
 from urllib.parse import quote
 
+from franken_stream.cache import SearchCache
+from franken_stream.llm import LLMClient
 from franken_stream.providers import ProviderManager
 from franken_stream.scraper import ContentScraper
 
@@ -21,16 +23,61 @@ class SidecarHandler:
 
     def __init__(self):
         self.pm = ProviderManager()
-        self.scraper = ContentScraper(provider_manager=self.pm)
+        self.llm = LLMClient()
+        self.scraper = ContentScraper(provider_manager=self.pm, llm_client=self.llm)
+        self.search_cache = SearchCache()
 
     async def handle_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Search providers concurrently, streaming results via stderr."""
         query = params.get("query", "")
         max_providers = params.get("max_providers", 5)
+        provider_hash = self.pm.get_config_hash()
 
+        payload = self.search_cache.get_or_fetch(
+            query,
+            provider_hash,
+            lambda: self._search_providers(query, max_providers),
+        )
+
+        total_results = 0
+        for batch in payload.get("batches", []):
+            notification = {
+                "jsonrpc": "2.0",
+                "method": "search.result",
+                "params": {
+                    "provider": batch["provider"],
+                    "results": batch["results"],
+                    "elapsed_ms": batch.get("elapsed_ms"),
+                    "cached": payload.get("cached", False),
+                },
+            }
+            print(json.dumps(notification), file=sys.stderr, flush=True)
+            total_results += len(batch["results"])
+
+        if total_results == 0:
+            ddg_results = self.scraper.search_duckduckgo(query)
+            if ddg_results:
+                notification = {
+                    "jsonrpc": "2.0",
+                    "method": "search.result",
+                    "params": {
+                        "provider": "duckduckgo",
+                        "results": [
+                            {"title": t, "url": u, "provider": "duckduckgo"}
+                            for t, u in ddg_results
+                        ],
+                        "cached": False,
+                    },
+                }
+                print(json.dumps(notification), file=sys.stderr, flush=True)
+                total_results += len(ddg_results)
+
+        return {"status": "complete", "total": total_results}
+
+    def _search_providers(self, query: str, max_providers: int) -> Dict[str, Any]:
         bases = self.pm.get_ranked_search_bases()[:max_providers]
         encoded_query = quote(query.replace(" ", "+"))
-        total_results = 0
+        batches = []
 
         def fetch_one(base_url: str):
             start = time.time()
@@ -41,6 +88,7 @@ class SidecarHandler:
                 elapsed_ms = (time.time() - start) * 1000
 
                 from bs4 import BeautifulSoup
+
                 soup = BeautifulSoup(response.content, "html.parser")
                 items = ContentScraper._extract_results(soup)
 
@@ -55,46 +103,75 @@ class SidecarHandler:
             futures = {executor.submit(fetch_one, url): url for url in bases}
             for future in as_completed(futures):
                 base_url, items, elapsed_ms = future.result()
-                if items:
-                    # Stream each batch to stderr as a notification
-                    notification = {
-                        "jsonrpc": "2.0",
-                        "method": "search.result",
-                        "params": {
-                            "provider": base_url,
-                            "results": [
-                                {"title": t, "url": u, "provider": base_url}
-                                for t, u in items
-                            ],
-                            "elapsed_ms": round(elapsed_ms, 1),
-                        },
-                    }
-                    print(json.dumps(notification), file=sys.stderr, flush=True)
-                    total_results += len(items)
-
-        # If no results from providers, try fallbacks
-        if total_results == 0:
-            ddg_results = self.scraper.search_duckduckgo(query)
-            if ddg_results:
-                notification = {
-                    "jsonrpc": "2.0",
-                    "method": "search.result",
-                    "params": {
-                        "provider": "duckduckgo",
+                batches.append(
+                    {
+                        "provider": base_url,
                         "results": [
-                            {"title": t, "url": u, "provider": "duckduckgo"}
-                            for t, u in ddg_results
+                            {"title": t, "url": u, "provider": base_url}
+                            for t, u in items
                         ],
-                    },
-                }
-                print(json.dumps(notification), file=sys.stderr, flush=True)
-                total_results += len(ddg_results)
+                        "elapsed_ms": round(elapsed_ms, 1),
+                    }
+                )
 
-        return {"status": "complete", "total": total_results}
+        return {"cached": False, "batches": batches}
 
     async def handle_get_health(self, _params: Dict) -> Dict[str, Any]:
         """Return provider health stats."""
         return {"providers": self.pm.get_health_summary()}
+
+    async def handle_openclaw(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle structured intent requests from OpenClaw."""
+        intent = params.get("intent")
+        query = None
+        action = "no_action"
+        message = "No intent matched."
+
+        if intent == "stream":
+            query = params.get("title") or params.get("query")
+            action = "search"
+            message = f"Searching for {query}."
+        elif intent == "stream_episode":
+            show = params.get("show")
+            season = params.get("season")
+            episode = params.get("episode")
+            if show and season is not None and episode is not None:
+                query = f"{show} s{season:02d}e{episode:02d}"
+                action = "search"
+                message = f"Searching for {show} season {season} episode {episode}."
+        elif intent == "search_natural":
+            query = params.get("description")
+            action = "search"
+            message = f"Searching for {query}."
+        elif intent == "recommend":
+            mood = params.get("mood")
+            genre = params.get("genre")
+            query = f"{mood} {genre or ''} movie"
+            action = "search"
+            message = f"Finding recommendations for {mood}."
+        elif intent == "control":
+            return {
+                "status": "success",
+                "action_taken": "control",
+                "data": {"received": params},
+                "message": "Control intent received.",
+            }
+
+        if not query:
+            return {
+                "status": "needs_clarification",
+                "action_taken": "none",
+                "data": {},
+                "message": "Please provide more details for the intent.",
+            }
+
+        payload = self._search_providers(query, max_providers=3)
+        return {
+            "status": "success",
+            "action_taken": action,
+            "data": {"results": payload.get("batches", [])},
+            "message": message,
+        }
 
     async def handle_embed(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Extract embed URL from a detail page."""
@@ -112,6 +189,7 @@ async def main():
         "search": handler.handle_search,
         "get_health": handler.handle_get_health,
         "get_embed": handler.handle_embed,
+        "openclaw": handler.handle_openclaw,
     }
 
     loop = asyncio.get_event_loop()

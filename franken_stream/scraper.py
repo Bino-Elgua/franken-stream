@@ -5,7 +5,7 @@ import subprocess
 import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import quote_plus, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -33,8 +33,13 @@ EMBED_PATTERNS = [
 class ContentScraper:
     """Scrapes streaming content from various providers."""
 
-    def __init__(self, proxy: Optional[str] = None, user_agent: Optional[str] = None,
-                 provider_manager=None):
+    def __init__(
+        self,
+        proxy: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        provider_manager=None,
+        llm_client=None,
+    ):
         """
         Initialize scraper with optional proxy and custom User-Agent.
 
@@ -42,21 +47,98 @@ class ContentScraper:
             proxy: Optional proxy URL (e.g., http://proxy.example.com:8080)
             user_agent: Custom User-Agent header
             provider_manager: Optional ProviderManager for health tracking
+            llm_client: Optional LLM helper for selector adaptation
         """
         self.proxy = proxy
         self.user_agent = user_agent or DEFAULT_USER_AGENT
         self.provider_manager = provider_manager
+        self.llm_client = llm_client
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": self.user_agent})
 
         if proxy:
             self.session.proxies = {"http": proxy, "https": proxy}
 
+    def get_page(self, url: str, timeout: int = 10) -> Optional[str]:
+        """Fetch a page and return the raw HTML text."""
+        try:
+            response = self.session.get(url, timeout=timeout)
+            response.raise_for_status()
+            return response.text
+        except Exception:
+            return None
+
+    def _validate_url(self, url: str) -> bool:
+        """
+        Validate URL for security and correctness.
+
+        Args:
+            url: URL to validate
+
+        Returns:
+            True if URL is safe and valid
+        """
+        if not url or not isinstance(url, str):
+            return False
+
+        try:
+            parsed = urlparse(url)
+            # Must have scheme and netloc
+            if not parsed.scheme or not parsed.netloc:
+                return False
+
+            # Only allow http/https
+            if parsed.scheme not in ['http', 'https']:
+                return False
+
+            # Basic length check
+            if len(url) > 2048:
+                return False
+
+            # Check for suspicious patterns
+            suspicious = ['javascript:', 'data:', 'vbscript:', '<script']
+            if any(pattern in url.lower() for pattern in suspicious):
+                return False
+
+            return True
+        except Exception:
+            return False
+
+    def _sanitize_url(self, url: str) -> Optional[str]:
+        """
+        Sanitize and validate URL.
+
+        Args:
+            url: URL to sanitize
+
+        Returns:
+            Sanitized URL or None if invalid
+        """
+        if not self._validate_url(url):
+            return None
+
+        # Remove any fragments or query params that might be malicious
+        parsed = urlparse(url)
+        clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        if parsed.query:
+            clean_url += f"?{parsed.query}"
+
+        return clean_url
+
+    def _build_search_url(self, base_url: str, query: str) -> str:
+        """Build a full search URL supporting placeholder providers."""
+        encoded_query = quote_plus(query)
+        if "{query}" in base_url:
+            return base_url.format(query=encoded_query)
+        if base_url.endswith("=") or base_url.endswith("?") or base_url.endswith("&"):
+            return f"{base_url}{encoded_query}"
+        return f"{base_url}{encoded_query}"
+
     def _fetch_provider(
-        self, base_url: str, encoded_query: str, verbose: bool = False
+        self, base_url: str, query: str, verbose: bool = False
     ) -> Tuple[str, List[Tuple[str, str]], float]:
         """Fetch results from a single provider (thread-safe)."""
-        full_url = f"{base_url}{encoded_query}"
+        full_url = self._build_search_url(base_url, query)
         start = _time.time()
         try:
             if verbose:
@@ -105,18 +187,55 @@ class ContentScraper:
             List of (title, url) tuples
         """
         results = []
-        encoded_query = quote(query.replace(" ", "+"))
 
         with ThreadPoolExecutor(max_workers=min(len(base_urls), 6)) as executor:
             futures = {
                 executor.submit(
-                    self._fetch_provider, url, encoded_query, verbose
+                    self._fetch_provider, url, query, verbose
                 ): url
                 for url in base_urls
             }
             for future in as_completed(futures):
                 base_url, items, elapsed_ms = future.result()
                 results.extend(items)
+                if self.provider_manager:
+                    self.provider_manager.record_result(
+                        base_url, len(items) > 0, elapsed_ms
+                    )
+
+        return results
+
+    def search_with_providers(
+        self, query: str, base_urls: List[str], verbose: bool = False
+    ) -> List[dict]:
+        """
+        Search for content across multiple providers and include provider metadata.
+
+        Args:
+            query: Search query (e.g., "Inception")
+            base_urls: List of base URLs to search
+            verbose: Print detailed debug info
+
+        Returns:
+            List of result dictionaries with title, url, and provider.
+        """
+        results = []
+
+        with ThreadPoolExecutor(max_workers=min(len(base_urls), 6)) as executor:
+            futures = {
+                executor.submit(
+                    self._fetch_provider, url, query, verbose
+                ): url
+                for url in base_urls
+            }
+            for future in as_completed(futures):
+                base_url, items, elapsed_ms = future.result()
+                for title, url in items:
+                    results.append({
+                        "title": title,
+                        "url": url,
+                        "provider": base_url,
+                    })
                 if self.provider_manager:
                     self.provider_manager.record_result(
                         base_url, len(items) > 0, elapsed_ms
@@ -295,6 +414,24 @@ class ContentScraper:
                     if embed_url.startswith("http"):
                         console.log(f"[green]✓ Found {pattern_type}:[/green] {embed_url[:60]}...")
                         return embed_url
+
+            # Fallback: ask an LLM for a selector if available
+            if self.llm_client and self.llm_client.enabled:
+                selector = self.llm_client.adapt_selector(
+                    page_url,
+                    html_str,
+                    target="video embed URL",
+                )
+                if selector:
+                    elements = soup.select(selector)
+                    for element in elements:
+                        src = element.get("src") or element.get("href") or element.get("data-src")
+                        if src:
+                            embed_url = self._make_absolute_url(src, page_url)
+                            console.log(
+                                f"[green]✓ LLM selector found embed:[/green] {embed_url[:60]}..."
+                            )
+                            return embed_url
 
             console.log("[yellow]⚠ No embed found on detail page")
             return None

@@ -11,6 +11,7 @@ from rich.table import Table
 from franken_stream.providers import ProviderManager
 from franken_stream.scraper import ContentScraper
 from franken_stream.tui import run_tui
+from franken_stream.web import run_server
 
 # Initialize CLI app and console
 app = typer.Typer(
@@ -306,6 +307,16 @@ def config() -> None:
             f"\n[yellow]⚠[/yellow] Config file not found. "
             "Run: franken-stream update"
         )
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind the web server."),
+    port: int = typer.Option(8000, "--port", help="Port for the web server."),
+) -> None:
+    """Run the Franken-Stream Web UI locally."""
+    console.print(f"[cyan]Starting Web UI at http://{host}:{port}[/cyan]")
+    run_server(host=host, port=port)
 
 
 def _display_results(results: list) -> None:

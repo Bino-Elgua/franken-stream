@@ -4,6 +4,7 @@ from typing import Optional
 
 from textual.app import ComposeResult
 from textual.screen import Screen
+from textual import events
 from textual.widgets import (
     Header,
     Footer,
@@ -40,6 +41,27 @@ class StatusBar(Static):
     def update_status(self, message: str) -> None:
         """Update status message."""
         self.update(message)
+
+
+class HoverLabel(Label):
+    """Label with hover tooltip support."""
+
+    def __init__(self, content: str = "", *, tooltip: str = "", **kwargs):
+        super().__init__(content, **kwargs)
+        self.tooltip = tooltip
+
+    def on_mount(self) -> None:
+        self.capture_mouse()
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        if self.tooltip:
+            status = self.app.query_one(StatusBar)
+            status.update_status(self.tooltip)
+            event.stop()
+
+    def on_leave(self, event: events.Leave) -> None:
+        status = self.app.query_one(StatusBar)
+        status.update_status("Ready")
 
 
 class SearchScreen(Screen):
@@ -123,6 +145,27 @@ class DashboardScreen(Screen):
         background: $background;
     }
     
+    #dashboard_panel {
+        height: 1fr;
+        background: $background;
+    }
+    
+    .sidebar-heading {
+        text-style: bold;
+        color: $text-primary;
+        margin-bottom: 1;
+    }
+
+    .sidebar-entry {
+        color: $text-secondary;
+        padding: 0 0 0 1;
+    }
+
+    .sidebar-empty {
+        color: $text-muted;
+        padding: 0 0 0 1;
+    }
+    
     #status_bar {
         dock: bottom;
         height: 1;
@@ -135,15 +178,30 @@ class DashboardScreen(Screen):
         yield Header()
         with Horizontal():
             # Sidebar
-            yield Static(
-                self._render_sidebar(),
-                id="sidebar"
-            )
+            with Vertical(id="sidebar"):
+                yield Static("RECENT SEARCHES", classes="sidebar-heading")
+                searches = getattr(self.app, "searches", [])
+                if searches:
+                    for i, search in enumerate(searches[-5:], 1):
+                        yield HoverLabel(
+                            f"{i}. {search[:18]}",
+                            tooltip="Recent search history entry. Press / to reopen the search screen.",
+                            classes="sidebar-entry"
+                        )
+                else:
+                    yield Static("No recent searches yet.", classes="sidebar-empty")
+
+                yield Static("\nKEYBINDINGS", classes="sidebar-heading")
+                yield HoverLabel("/  Search", tooltip="Open the search screen.", classes="sidebar-entry")
+                yield HoverLabel("b  Browse", tooltip="Browse categories and curated streams.", classes="sidebar-entry")
+                yield HoverLabel("h  History", tooltip="Show recent search history.", classes="sidebar-entry")
+                yield HoverLabel("u  Update", tooltip="Refresh providers and connection status.", classes="sidebar-entry")
+                yield HoverLabel("?  Help", tooltip="Show help details and keyboard commands.", classes="sidebar-entry")
+                yield HoverLabel("q  Quit", tooltip="Exit Franken-Stream.", classes="sidebar-entry")
+
             # Main dashboard
-            yield Static(
-                self._render_dashboard(),
-                id="dashboard"
-            )
+            with Vertical(id="dashboard"):
+                yield Static(self._render_dashboard(), id="dashboard_panel")
         yield StatusBar(id="status_bar")
         yield Footer()
 
@@ -151,26 +209,6 @@ class DashboardScreen(Screen):
         """Initialize screen."""
         self.app.title = "Franken-Stream"
         self.app.pm = ProviderManager()
-
-    def _render_sidebar(self) -> Panel:
-        """Render sidebar content."""
-        text = Text("RECENT SEARCHES\n", style="bold cyan")
-        text.append("─" * 20 + "\n", style="dim")
-        
-        searches = getattr(self.app, "searches", [])
-        for i, search in enumerate(searches[-5:], 1):
-            text.append(f"{i}. {search[:18]}\n", style="white")
-        
-        text.append("\n[bold cyan]KEYBINDINGS[/bold cyan]\n")
-        text.append("─" * 20 + "\n", style="dim")
-        text.append("/  Search\n", style="dim white")
-        text.append("b  Browse\n", style="dim white")
-        text.append("h  History\n", style="dim white")
-        text.append("u  Update\n", style="dim white")
-        text.append("?  Help\n", style="dim white")
-        text.append("q  Quit\n", style="dim white")
-        
-        return Panel(text, expand=False, border_style="cyan")
 
     def _render_dashboard(self) -> Panel:
         """Render dashboard content."""

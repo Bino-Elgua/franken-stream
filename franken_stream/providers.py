@@ -1,5 +1,6 @@
 """Provider management and configuration."""
 
+import hashlib
 import json
 import os
 import statistics
@@ -71,7 +72,7 @@ class ProviderManager:
 
     def load_providers(self) -> Dict[str, Any]:
         """
-        Load providers from local file or download from GitHub.
+        Load providers from local JSON/TOML file or download from GitHub.
 
         Returns:
             Dictionary with movie_search_bases and embed_fallbacks.
@@ -81,22 +82,32 @@ class ProviderManager:
 
         self._ensure_config_dir()
 
-        # Try to load from local file
-        if self.config_file.exists():
+        config_file = self.config_file
+        toml_file = self.config_dir / "providers.toml"
+
+        if not config_file.exists() and toml_file.exists():
+            config_file = toml_file
+
+        if config_file.exists():
             try:
-                with open(self.config_file, "r") as f:
-                    self.providers = json.load(f)
+                with open(config_file, "rb") as f:
+                    content = f.read()
+                    if isinstance(content, str):
+                        content = content.encode()
+                    if config_file.suffix == ".toml":
+                        self.providers = self._parse_toml(content)
+                    else:
+                        self.providers = json.loads(content.decode())
                 console.log(
                     f"[green]✓[/green] Loaded providers from "
-                    f"{self.config_file}"
+                    f"{config_file}"
                 )
                 return self.providers
-            except json.JSONDecodeError as e:
+            except Exception as e:
                 console.log(
-                    f"[red]✗[/red] Error parsing providers.json: {e}"
+                    f"[red]✗[/red] Error parsing {config_file.name}: {e}"
                 )
 
-        # Download from GitHub or use defaults
         return self._fetch_or_create_providers()
 
     def _fetch_or_create_providers(self) -> Dict[str, Any]:
@@ -142,6 +153,43 @@ class ProviderManager:
         except IOError as e:
             console.log(f"[red]✗[/red] Could not save providers: {e}")
 
+    @staticmethod
+    def _parse_toml(content: bytes) -> Dict[str, Any]:
+        try:
+            import tomllib
+
+            return tomllib.loads(content.decode())
+        except ModuleNotFoundError:
+            try:
+                import tomli as tomllib
+
+                return tomllib.loads(content.decode())
+            except ImportError as exc:
+                raise RuntimeError(
+                    "TOML support requires Python 3.11+ or tomli installed"
+                ) from exc
+
+    def get_config_hash(self) -> str:
+        """Return a stable hash of the loaded provider configuration."""
+        providers = self.load_providers()
+        serialized = json.dumps(providers, sort_keys=True).encode("utf-8")
+        return hashlib.sha256(serialized).hexdigest()
+
+    def _is_suppressed_provider(self, url: str) -> bool:
+        stats = self.health.get(url)
+        if not stats:
+            return False
+
+        if stats.success_rate < 0.3 and stats.consecutive_failures >= 3:
+            if stats.last_failure:
+                try:
+                    last_fail = datetime.fromisoformat(stats.last_failure)
+                    if datetime.now() - last_fail < timedelta(hours=1):
+                        return True
+                except ValueError:
+                    pass
+        return False
+
     def update_providers(self) -> bool:
         """
         Refresh providers from GitHub.
@@ -166,6 +214,19 @@ class ProviderManager:
     def get_search_bases(self) -> List[str]:
         """Get list of movie search base URLs."""
         providers = self.load_providers()
+        if isinstance(providers, dict) and "provider" in providers:
+            entries = [
+                p for p in providers.get("provider", []) if p.get("enabled", True)
+            ]
+            entries.sort(key=lambda p: p.get("priority", 50))
+            bases = []
+            for entry in entries:
+                base_url = entry.get("base_url") or entry.get("search_url")
+                if base_url:
+                    bases.append(base_url)
+            if bases:
+                return bases
+
         return providers.get("movie_search_bases", [])
 
     def get_embed_fallbacks(self) -> List[str]:
@@ -176,6 +237,13 @@ class ProviderManager:
     def get_legal_sources(self) -> List[str]:
         """Get list of legal streaming sources."""
         providers = self.load_providers()
+        if isinstance(providers, dict) and "provider" in providers:
+            return [
+                p.get("base_url")
+                for p in providers.get("provider", [])
+                if p.get("enabled", True) and p.get("legal", False)
+                and p.get("base_url")
+            ]
         return providers.get("legal_fallbacks", [])
 
     def _load_health(self) -> Dict[str, ProviderStats]:
@@ -230,7 +298,9 @@ class ProviderManager:
                     pass
             return reliability + speed - penalty
 
-        return sorted(bases, key=_score, reverse=True)
+        ranked = sorted(bases, key=_score, reverse=True)
+        filtered = [url for url in ranked if not self._is_suppressed_provider(url)]
+        return filtered or ranked
 
     def get_health_summary(self) -> List[Dict[str, Any]]:
         """Return health stats for all tracked providers."""
@@ -244,6 +314,7 @@ class ProviderManager:
                 "avg_ms": round(stats.avg_response_ms, 1),
                 "consecutive_failures": stats.consecutive_failures,
                 "last_failure": stats.last_failure,
+                "disabled": self._is_suppressed_provider(url),
             })
         return summary
 

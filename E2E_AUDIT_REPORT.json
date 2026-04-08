@@ -1,0 +1,98 @@
+{
+  "timestamp": "2026-04-08T19:36:03.431540",
+  "tests": {
+    "unit_tests": {
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "ERROR: /workspaces/franken-stream/pyproject.toml: Expected '=' after a key in a key/value pair (at line 54, column 33)\n\n",
+      "success": true
+    },
+    "cli_commands": {
+      "help": {
+        "returncode": 0,
+        "stdout": "                                                                                \n Usage: python -m franken_stream.main [OPTIONS] COMMAND [ARGS]...               \n                                                                                \n Terminal media streamer for movies and TV shows.                               \n                                                                                \n\u256d\u2500 Options \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 --install-completion          Install completion for the current shell.      \u2502\n\u2502 --show-completion             Show completion for the current shell, to copy \u2502\n\u2502                               it or customize the installation.              \u2502\n\u2502 --help                        Show this message and exit.                    \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 watch           Search and stream a movie or TV show.                        \u2502\n\u2502 tv              Search for and stream TV shows with season/episode support.  \u2502\n\u2502 test-providers  Test provider URLs for health and response time.             \u2502\n\u2502 update          Update streaming providers from GitHub.                      \u2502\n\u2502 validate        Validate configuration file.                                 \u2502\n\u2502 config          Show configuration information.                              \u2502\n\u2502 web             Run the Franken-Stream Web UI locally.                       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\n",
+        "stderr": "",
+        "success": true
+      },
+      "config": {
+        "returncode": 0,
+        "stdout": "                          Franken-Stream Configuration                          \n\u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 Setting       \u2503 Value                                                        \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 Config Dir    \u2502 /home/codespace/.franken-stream                              \u2502\n\u2502 Config File   \u2502 /home/codespace/.franken-stream/providers.json               \u2502\n\u2502 GitHub Source \u2502 https://raw.githubusercontent.com/Bino-Elgua/stream-provide\u2026 \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n\u2713 Config file exists at /home/codespace/.franken-stream/providers.json\n[19:36:04] \u2713 Loaded providers from                               providers.py:89\n           /home/codespace/.franken-stream/providers.json                       \n  - Search bases: 2\n  - Embed fallbacks: 4\n  - Legal sources: 0\n",
+        "stderr": "",
+        "success": true
+      },
+      "validate": {
+        "returncode": 0,
+        "stdout": "[19:36:05] \u2713 Loaded providers from                               providers.py:89\n           /home/codespace/.franken-stream/providers.json                       \n           \u2713 Config is valid                                    providers.py:282\n\u2713 Configuration is valid\n",
+        "stderr": "",
+        "success": true
+      },
+      "test_providers": {
+        "returncode": 0,
+        "stdout": "[19:36:06] \u2713 Loaded providers from                               providers.py:89\n           /home/codespace/.franken-stream/providers.json                       \nTesting providers (ranked by reliability)...\n\n                             Provider Health Check                              \n\u250f\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2533\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 #   \u2503 URL                                           \u2503  \u2503 \u2503 Rate   \u2503 Avg      \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2547\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 1   \u2502 https://www.123movies.co/search/              \u2502  \u2502 \u2502 55%    \u2502 733ms    \u2502\n\u2502 2   \u2502 https://fmovies.to/search?keyword=            \u2502  \u2502 \u2502 0%     \u2502 13ms     \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2534\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\nHealthy: 1\nSlow: 0\nDead: 1\n\n\u2192 Dead providers will be deprioritized automatically\n",
+        "stderr": "",
+        "success": true
+      },
+      "update": {
+        "returncode": 1,
+        "stdout": "[19:36:07] Updating providers from GitHub...                    providers.py:153\n           \u2717 Failed to update providers: 404 Client Error: Not  providers.py:161\n           Found for url:                                                       \n           https://raw.githubusercontent.com/Bino-Elgua/stream-                 \n           providers/main/providers.json                                        \n\u2717 Update failed: 1\n",
+        "stderr": "",
+        "success": false
+      }
+    },
+    "web_ui": {
+      "result": {
+        "returncode": 124,
+        "stdout": "Starting Web UI at http://127.0.0.1:8002\n",
+        "stderr": "",
+        "success": false
+      },
+      "success": true
+    },
+    "search": {
+      "result": {
+        "returncode": 1,
+        "stdout": "[19:36:10] \u2713 Loaded providers from                               providers.py:89\n           /home/codespace/.franken-stream/providers.json                       \n\nSearching for: test\n\n[19:36:10] Searching: https://www.123movies.co/search/test...     scraper.py:122\n           Searching: https://fmovies.to/search?keyword=test...   scraper.py:122\n\u26a0 No results found locally.\n\u2192 Trying fallback methods (DuckDuckGo, yt-dlp)...\n[19:36:11] Searching DuckDuckGo for 'test'...                     scraper.py:451\n\u2192 Falling back to yt-dlp...\n           Attempting to stream 'test' with yt-dlp...             scraper.py:544\n           \u2717 yt-dlp not found. Install with: pip install yt-dlp   scraper.py:589\n\u2717 Error: 1\n",
+        "stderr": "",
+        "success": false
+      },
+      "success": true
+    },
+    "security_audit": {
+      "no_hardcoded_secrets": true,
+      "safe_url_handling": true,
+      "input_validation": true,
+      "proxy_security": true,
+      "file_permissions": true
+    },
+    "performance": {
+      "startup_time": 0.3027381896972656,
+      "provider_load_time": 0.21838045120239258,
+      "acceptable": true
+    }
+  },
+  "summary": {
+    "tests_run": 6,
+    "tests_passed": 5,
+    "success_rate": "5/6",
+    "overall_success": true
+  },
+  "security": {
+    "hardcoded_secrets": {
+      "found": [],
+      "safe": true
+    },
+    "url_handling": {
+      "has_validation": true
+    },
+    "input_validation": {
+      "has_validation": true
+    },
+    "proxy_security": {
+      "configured": true
+    },
+    "file_permissions": {
+      "permissions": "755",
+      "safe": true
+    }
+  }
+}
