@@ -122,7 +122,32 @@ class SidecarHandler:
 
     async def handle_openclaw(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle structured intent requests from OpenClaw."""
-        intent = params.get("intent")
+        from franken_stream.openclaw_skill import FrankenStreamSkill
+
+        intent = params.get("intent", "")
+
+        # ---- Intents delegated to FrankenStreamSkill (new media types) ----
+        _skill_intents = {
+            "play_radio",
+            "play_podcast",
+            "get_podcast_episodes",
+            "play_audiobook",
+            "watch_live",
+            "get_scores",
+            "provider_health",
+        }
+        if intent in _skill_intents:
+            if intent == "provider_health":
+                return {
+                    "status": "success",
+                    "action_taken": "provider_health",
+                    "data": {"providers": self.pm.get_health_summary()},
+                    "message": "Provider health retrieved.",
+                }
+            skill = FrankenStreamSkill()
+            return skill.handle_intent(intent, params)
+
+        # ---- Original video-search intents ----
         query = None
         action = "no_action"
         message = "No intent matched."
