@@ -38,6 +38,9 @@ dependencies = [
     "tomli>=2.0.0; python_version < '3.11'",
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
+    "feedparser>=6.0.0",
+    "pypresence>=4.3.0",
+    "websocket-client>=1.6.0",
 ]
 
 [project.optional-dependencies]
@@ -52,7 +55,14 @@ dev = [
 franken-stream = "franken_stream.main:app"
 
 [tool.setuptools]
-packages = ["franken_stream"]
+packages = [
+    "franken_stream",
+    "franken_stream.music",
+    "franken_stream.audio",
+    "franken_stream.live_tv",
+    "franken_stream.sports",
+    "franken_stream.social",
+]
 
 [tool.setuptools.package-data]
 franken_stream = ["web_ui/*", "providers.json"]

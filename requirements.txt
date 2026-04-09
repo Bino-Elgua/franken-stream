@@ -7,3 +7,6 @@ textual>=0.40.0
 tomli>=2.0.0
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
+feedparser>=6.0.0
+pypresence>=4.3.0
+websocket-client>=1.6.0
