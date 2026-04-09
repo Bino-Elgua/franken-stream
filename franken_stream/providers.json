@@ -1,0 +1,28 @@
+{
+  "movie_search_bases": [
+    "https://myflixerz.to/search/",
+    "https://myflixerz.me/search/",
+    "https://myflixer.cx/search/",
+    "https://cineby.ru/search/",
+    "https://lookmovie2.to/search?q=",
+    "https://hurawatch.cc/search?keyword=",
+    "https://yesmovies.ag/search?keyword=",
+    "https://2flix.com/search/",
+    "https://flixbaba.com/search?q="
+  ],
+  "embed_fallbacks": [
+    "vidplay.online",
+    "streamtape.com",
+    "upstream.to",
+    "vidcloud9.com",
+    "mycloud"
+  ],
+  "legal_fallbacks": [
+    "https://www.youtube.com/results?search_query="
+  ],
+  "series_search_bases": [
+    "https://myflixerz.to/search/",
+    "https://lookmovie2.to/search?q="
+  ],
+  "notes": "Feb 13 2026 – myflixerz variants (to, me, cx) active per reports. lookmovie2.to, hurawatch.cc, yesmovies.ag, 2flix.com often work. flixbaba.com for rare titles. Test with proxy if geo-blocked. yt-dlp catches YouTube uploads."
+}

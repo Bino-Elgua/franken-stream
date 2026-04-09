@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -35,7 +35,7 @@ dependencies = [
     "yt-dlp>=2023.0.0",
     "rich>=13.0.0",
     "textual>=0.40.0",
-    "tomli>=2.0.0",
+    "tomli>=2.0.0; python_version < '3.11'",
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
 ]
@@ -53,10 +53,9 @@ franken-stream = "franken_stream.main:app"
 
 [tool.setuptools]
 packages = ["franken_stream"]
-"package-data" = {"franken_stream" = ["web_ui/*"]}
 
-[tool.setuptools_scm]
-write_to = "franken_stream/_version.py"
+[tool.setuptools.package-data]
+franken_stream = ["web_ui/*", "providers.json"]
 
 [tool.black]
 line-length = 100

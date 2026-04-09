@@ -63,7 +63,7 @@ class ProviderManager:
         self.health_db = self.config_dir / "provider_health.db"
         self.github_url = (
             "https://raw.githubusercontent.com/"
-            "Bino-Elgua/stream-providers/main/providers.json"
+            "Bino-Elgua/franken-stream/main/providers.json"
         )
         self.providers: Optional[Dict[str, Any]] = None
         self.health: Dict[str, ProviderStats] = self._load_health()
@@ -113,7 +113,7 @@ class ProviderManager:
         return self._fetch_or_create_providers()
 
     def _fetch_or_create_providers(self) -> Dict[str, Any]:
-        """Fetch providers from GitHub or create default ones."""
+        """Fetch providers from GitHub or fall back to bundled providers."""
         try:
             console.log("Fetching providers from GitHub...")
             response = requests.get(self.github_url, timeout=10)
@@ -126,24 +126,29 @@ class ProviderManager:
             console.log(
                 f"[yellow]⚠[/yellow] Could not fetch from GitHub: {e}"
             )
-            console.log("Using default providers...")
-            self.providers = self._get_default_providers()
+            console.log("Using bundled providers...")
+            self.providers = self._get_bundled_providers()
             self._save_providers()
             return self.providers
 
     @staticmethod
-    def _get_default_providers() -> Dict[str, Any]:
-        """Return default provider configuration."""
+    def _get_bundled_providers() -> Dict[str, Any]:
+        """Load providers bundled with the package (offline fallback)."""
+        bundled = Path(__file__).with_name("providers.json")
+        if bundled.exists():
+            with open(bundled, "r") as f:
+                return json.load(f)
+        # Last-resort hardcoded minimal set
         return {
             "movie_search_bases": [
-                "https://fmovies.to/search?keyword=",
-                "https://www.123movies.co/search/",
+                "https://myflixerz.to/search/",
+                "https://lookmovie2.to/search?q=",
             ],
-            "embed_fallbacks": [
-                "mycloud",
-                "upstream",
-                "vidcloud",
-                "streamwish",
+            "embed_fallbacks": ["mycloud", "upstream", "vidcloud", "streamwish"],
+            "legal_fallbacks": ["https://www.youtube.com/results?search_query="],
+            "series_search_bases": [
+                "https://myflixerz.to/search/",
+                "https://lookmovie2.to/search?q=",
             ],
         }
 

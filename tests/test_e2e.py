@@ -92,33 +92,42 @@ class TestWebUI:
         assert "web" in result.stdout.lower()
 
     def test_web_server_start(self):
-        """Test web server can start."""
-        import signal
+        """Test web server can start and serve HTTP."""
+        import os
+        import socket
         import time
 
-        # Start the server process
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(Path(__file__).parent.parent)
+
         proc = subprocess.Popen(
             [sys.executable, "-m", "franken_stream.main", "web", "--host", "127.0.0.1", "--port", "8001"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env={"PYTHONPATH": str(Path(__file__).parent.parent)},
-            cwd=Path(__file__).parent.parent
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            cwd=Path(__file__).parent.parent,
         )
 
-        # Wait a bit for startup
-        time.sleep(2)
+        try:
+            # Poll until port is open (up to 6 seconds)
+            started = False
+            for _ in range(12):
+                time.sleep(0.5)
+                if proc.poll() is not None:
+                    raise AssertionError(f"Web server exited early (rc={proc.returncode})")
+                try:
+                    s = socket.create_connection(("127.0.0.1", 8001), timeout=0.3)
+                    s.close()
+                    started = True
+                    break
+                except OSError:
+                    pass
 
-        # Check if it started successfully by reading stdout
-        if proc.poll() is None:  # Still running
-            proc.terminate()
+            assert started, "Web server did not bind to port 8001 within 6 seconds"
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
             proc.wait(timeout=5)
-            stdout, stderr = proc.communicate()
-            assert "Starting Franken-Stream Web UI" in stdout
-        else:
-            # Process already exited
-            stdout, stderr = proc.communicate()
-            assert proc.returncode == 0 or "Starting Franken-Stream Web UI" in stdout
 
 
 class TestSecurity:
