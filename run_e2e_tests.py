@@ -250,6 +250,8 @@ class TestRunner:
                     cli_success = all(r.get("success", False) for cmd, r in test_result.items() if cmd != "update")
                     update_ok = test_result.get("update", {}).get("success", False) or "Failed to update" in test_result.get("update", {}).get("stdout", "")
                     tests_passed += 1 if cli_success and update_ok else 0
+                elif test_name == "performance":
+                    tests_passed += 1 if test_result.get("acceptable", False) else 0
                 elif isinstance(test_result, dict) and "success" in test_result:
                     tests_passed += 1 if test_result["success"] else 0
                 elif isinstance(test_result, bool):

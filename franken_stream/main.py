@@ -11,14 +11,21 @@ from rich.table import Table
 from franken_stream.providers import ProviderManager
 from franken_stream.scraper import ContentScraper
 from franken_stream.tui import run_tui
-from franken_stream import web
 
 # Initialize CLI app and console
 app = typer.Typer(
     help="Terminal media streamer for movies and TV shows.",
     no_args_is_help=False,
 )
-app.add_typer(web.app, name="web", help="Start the browser-based Web UI")
+
+# Optional Web UI registration
+try:
+    from franken_stream import web
+    app.add_typer(web.app, name="web", help="Start the browser-based Web UI")
+except (ImportError, ModuleNotFoundError):
+    # Web UI won't be available if dependencies (fastapi/uvicorn) are missing
+    pass
+
 console = Console()
 
 
