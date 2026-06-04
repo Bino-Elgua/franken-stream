@@ -10,6 +10,7 @@ from urllib.parse import quote_plus, urlparse
 import requests
 from bs4 import BeautifulSoup
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 console = Console()
 
@@ -143,8 +144,6 @@ class ContentScraper:
         try:
             if verbose:
                 console.log(f"[cyan]→ Searching: {full_url}")
-            else:
-                console.log(f"Searching: {full_url[:60]}...")
 
             response = self.session.get(full_url, timeout=10)
             response.raise_for_status()
@@ -158,8 +157,6 @@ class ContentScraper:
                     f"[green]✓ Found {len(items)} results from "
                     f"{base_url} ({elapsed_ms:.0f}ms)"
                 )
-            else:
-                console.log(f"[green]✓[/green] Found {len(items)} results")
 
             return base_url, items, elapsed_ms
 
@@ -188,20 +185,38 @@ class ContentScraper:
         """
         results = []
 
-        with ThreadPoolExecutor(max_workers=min(len(base_urls), 6)) as executor:
-            futures = {
-                executor.submit(
-                    self._fetch_provider, url, query, verbose
-                ): url
-                for url in base_urls
-            }
-            for future in as_completed(futures):
-                base_url, items, elapsed_ms = future.result()
-                results.extend(items)
-                if self.provider_manager:
-                    self.provider_manager.record_result(
-                        base_url, len(items) > 0, elapsed_ms
-                    )
+        if verbose:
+            with ThreadPoolExecutor(max_workers=min(len(base_urls), 6)) as executor:
+                futures = {
+                    executor.submit(self._fetch_provider, url, query, verbose): url
+                    for url in base_urls
+                }
+                for future in as_completed(futures):
+                    base_url, items, elapsed_ms = future.result()
+                    results.extend(items)
+                    if self.provider_manager:
+                        self.provider_manager.record_result(base_url, len(items) > 0, elapsed_ms)
+            return results
+
+        with Progress(SpinnerColumn(), TextColumn("[cyan]{task.description}"), console=console, transient=True) as progress:
+            task = progress.add_task(
+                f"Searching {len(base_urls)} provider(s) for '{query}'...",
+                total=len(base_urls),
+            )
+            with ThreadPoolExecutor(max_workers=min(len(base_urls), 6)) as executor:
+                futures = {
+                    executor.submit(self._fetch_provider, url, query, verbose): url
+                    for url in base_urls
+                }
+                for future in as_completed(futures):
+                    base_url, items, elapsed_ms = future.result()
+                    results.extend(items)
+                    if self.provider_manager:
+                        self.provider_manager.record_result(base_url, len(items) > 0, elapsed_ms)
+                    progress.advance(task)
+                    domain = urlparse(base_url).netloc or base_url
+                    if items:
+                        progress.console.print(f"[green]✓[/green] {domain[:35]}: {len(items)} result(s)")
 
         return results
 
@@ -221,28 +236,21 @@ class ContentScraper:
         """
         results = []
 
-        with ThreadPoolExecutor(max_workers=min(len(base_urls), 6)) as executor:
-            futures = {
-                executor.submit(
-                    self._fetch_provider, url, query, verbose
-                ): url
-                for url in base_urls
-            }
-            for future in as_completed(futures):
+        def _collect(future_map):
+            for future in as_completed(future_map):
                 base_url, items, elapsed_ms = future.result()
-                for title, url in items:
-                    results.append({
-                        "title": title,
-                        "url": url,
-                        "provider": base_url,
-                    })
+                for title, item_url in items:
+                    results.append({"title": title, "url": item_url, "provider": base_url})
                 if self.provider_manager:
-                    self.provider_manager.record_result(
-                        base_url, len(items) > 0, elapsed_ms
-                    )
+                    self.provider_manager.record_result(base_url, len(items) > 0, elapsed_ms)
+
+        with ThreadPoolExecutor(max_workers=min(len(base_urls), 6)) as executor:
+            futures = {executor.submit(self._fetch_provider, url, query, verbose): url for url in base_urls}
+            _collect(futures)
 
         return results
 
+    @staticmethod
     def _extract_results(
         soup: BeautifulSoup, verbose: bool = False, llm_client=None, provider_url=None
     ) -> List[Tuple[str, str]]:
@@ -563,58 +571,106 @@ class ContentScraper:
             console.log(f"[yellow]⚠[/yellow] DuckDuckGo search failed: {e}")
             return []
 
-    def play_url(self, url: str, is_embed: bool = False) -> bool:
+    def _detect_stream_type(self, url: str) -> str:
+        """
+        Detect stream type to choose the right playback strategy.
+
+        Returns one of: "direct", "hls", "dash", "ytdlp"
+        """
+        url_path = url.lower().split("?")[0]
+
+        direct_exts = (".mp4", ".mkv", ".avi", ".webm", ".mov", ".ts", ".ogv")
+        if any(url_path.endswith(ext) for ext in direct_exts):
+            return "direct"
+
+        if ".m3u8" in url_path:
+            return "hls"
+
+        if ".mpd" in url_path:
+            return "dash"
+
+        try:
+            resp = self.session.head(url, timeout=5, allow_redirects=True)
+            ct = resp.headers.get("content-type", "").lower()
+            if "mpegurl" in ct or "x-mpegurl" in ct:
+                return "hls"
+            if "dash" in ct:
+                return "dash"
+            if "video/" in ct or "audio/" in ct:
+                return "direct"
+        except Exception:
+            pass
+
+        return "ytdlp"
+
+    def play_url(self, url: str, is_embed: bool = False, title: str = "") -> bool:
         """
         Play a URL using yt-dlp + mpv for best compatibility.
 
         Args:
             url: Video URL to play
-            is_embed: True if URL is an embed (use yt-dlp for HLS/subtitles)
+            is_embed: True if URL is an embed page (use yt-dlp for HLS/subtitles)
+            title: Window title shown in mpv
 
         Returns:
             True if playback started, False otherwise
         """
+        import shutil
+
         try:
-            console.log(f"[cyan]→ Preparing playback...")
-            
-            # Use yt-dlp for embeds to handle HLS, subtitles, etc.
+            console.log("[cyan]→ Preparing playback...")
+
+            video_url = url
+            audio_url = None
+
             if is_embed:
-                console.log("[cyan]  Getting stream URL via yt-dlp...")
-                result = subprocess.run(
-                    [
-                        "yt-dlp",
-                        "-f", "best",
-                        "--no-playlist",
-                        "--get-url",
-                        url
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                
-                if result.returncode == 0 and result.stdout.strip():
-                    stream_url = result.stdout.strip().split("\n")[0]
-                    console.log(f"[green]✓ Got stream URL[/green]")
-                    url = stream_url
+                stream_type = self._detect_stream_type(url)
+                if stream_type in ("direct", "hls", "dash"):
+                    console.log(f"[cyan]  Detected {stream_type} stream, playing directly...")
                 else:
-                    console.log("[yellow]⚠ yt-dlp could not extract stream, trying direct...")
-            
-            # Try mpv
+                    console.log("[cyan]  Extracting stream via yt-dlp...")
+                    result = subprocess.run(
+                        [
+                            "yt-dlp",
+                            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                            "--no-playlist",
+                            "--get-url",
+                            url,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+
+                    if result.returncode == 0 and result.stdout.strip():
+                        lines = [ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()]
+                        if len(lines) >= 2:
+                            # Adaptive stream: yt-dlp returns video URL then audio URL
+                            video_url, audio_url = lines[0], lines[1]
+                            console.log("[green]✓ Got separate video+audio streams[/green]")
+                        elif lines:
+                            video_url = lines[0]
+                            console.log("[green]✓ Got merged stream URL[/green]")
+                    else:
+                        console.log("[yellow]⚠ yt-dlp could not extract stream, trying direct mpv...")
+
+            mpv_path = shutil.which("mpv") or "mpv"
             console.log("[cyan]→ Starting mpv...")
-            subprocess.run(
-                ["mpv", "--hwdec=auto", url],
-                timeout=3600,
-            )
+            mpv_cmd = [mpv_path, "--hwdec=auto-safe"]
+            if title:
+                mpv_cmd.append(f"--title={title}")
+            if audio_url:
+                mpv_cmd.append(f"--audio-file={audio_url}")
+            mpv_cmd.append(video_url)
+
+            subprocess.run(mpv_cmd, timeout=3600)
             return True
 
         except FileNotFoundError:
-            console.log(
-                "[yellow]⚠ mpv not found. Install with: pkg install mpv"
-            )
-            console.log(f"[green]Stream URL: {url}[/green]")
-            console.log("[cyan]Paste this URL in your browser or use: yt-dlp {url}")
-            return True  # Still success (user can play manually)
+            console.log("[yellow]⚠ mpv not found. Install with: pkg install mpv")
+            console.log(f"[green]Stream URL:[/green] {url}")
+            console.log(f"[cyan]Paste in browser or run:[/cyan] yt-dlp '{url}'")
+            return True  # User can play manually
         except subprocess.TimeoutExpired:
             return True  # Normal end of playback
         except Exception as e:
@@ -639,8 +695,7 @@ class ContentScraper:
             result = subprocess.run(
                 [
                     "yt-dlp",
-                    "-f",
-                    "best",
+                    "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
                     "--get-url",
                     search_query,
                 ],
@@ -650,22 +705,24 @@ class ContentScraper:
             )
 
             if result.returncode == 0 and result.stdout.strip():
-                url = result.stdout.strip().split("\n")[0]
-                console.log(f"[green]✓[/green] Found stream: {url[:60]}...")
+                lines = [ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()]
+                video_url = lines[0]
+                audio_url = lines[1] if len(lines) >= 2 else None
+                console.log(f"[green]✓[/green] Found stream: {video_url[:60]}...")
 
-                # Try to play with mpv
                 try:
-                    subprocess.run(
-                        ["mpv", url],
-                        timeout=3600,
-                    )
+                    mpv_cmd = ["mpv", "--hwdec=auto"]
+                    if audio_url:
+                        mpv_cmd.append(f"--audio-file={audio_url}")
+                    mpv_cmd.append(video_url)
+                    subprocess.run(mpv_cmd, timeout=3600)
                     return True
                 except FileNotFoundError:
                     console.log(
                         "[yellow]⚠[/yellow] mpv not found. "
                         "Please install mpv or use your player manually."
                     )
-                    console.log(f"Stream URL: {url}")
+                    console.log(f"Stream URL: {video_url}")
                     return True
                 except subprocess.TimeoutExpired:
                     return True  # Stream ended normally
@@ -736,6 +793,26 @@ class ContentScraper:
             return False
         except Exception as e:
             console.log(f"[red]✗[/red] Download error: {e}")
+            return False
+
+    def validate_proxy(self, proxy_url: str) -> bool:
+        """
+        Test if a proxy is reachable with a live HEAD request.
+
+        Args:
+            proxy_url: Proxy URL to test (e.g. http://host:port)
+
+        Returns:
+            True if proxy responds successfully
+        """
+        try:
+            resp = requests.head(
+                "https://www.example.com",
+                proxies={"http": proxy_url, "https": proxy_url},
+                timeout=6,
+            )
+            return resp.status_code < 500
+        except Exception:
             return False
 
     def test_provider_url(self, url: str, timeout: int = 10) -> Tuple[bool, float]:

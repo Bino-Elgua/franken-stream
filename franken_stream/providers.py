@@ -382,6 +382,19 @@ class ProviderManager:
             })
         return summary
 
+    def get_plugin_registry(self):
+        """Return the plugin registry (lazy init)."""
+        if not hasattr(self, "_registry"):
+            from franken_stream.provider_plugins import ProviderRegistry
+            self._registry = ProviderRegistry()
+        return self._registry
+
+    async def search_plugins(self, query: str) -> list:
+        """Search all registered provider plugins."""
+        registry = self.get_plugin_registry()
+        items = await registry.search_all(query)
+        return [(item.title, item.url) for item in items]
+
     def validate_config(self) -> bool:
         """
         Validate providers configuration.

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{broadcast, Mutex};
 use tracing::{info, warn};
 
 /// Manages the Python sidecar process and JSON-RPC communication.
@@ -17,8 +17,8 @@ pub struct PythonSidecar {
 }
 
 impl PythonSidecar {
-    /// Spawn the Python sidecar and return (sidecar, streaming_notifications_rx).
-    pub async fn spawn(python_module: &str) -> Result<(Self, mpsc::Receiver<RpcNotification>)> {
+    /// Spawn the Python sidecar and return (sidecar, notification_broadcast_tx).
+    pub async fn spawn(python_module: &str) -> Result<(Self, broadcast::Sender<String>)> {
         let mut process = Command::new("python")
             .arg("-m")
             .arg(python_module)
@@ -35,7 +35,9 @@ impl PythonSidecar {
         let stdout = BufReader::new(process.stdout.take().context("No stdout on child")?);
         let stderr = BufReader::new(process.stderr.take().context("No stderr on child")?);
 
-        let (notify_tx, notify_rx) = mpsc::channel::<RpcNotification>(256);
+        let (notify_tx, _) = broadcast::channel::<String>(256);
+        let notify_tx_clone = notify_tx.clone();
+
         let pending: Arc<Mutex<HashMap<i64, tokio::sync::oneshot::Sender<RpcResponse>>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
@@ -58,18 +60,14 @@ impl PythonSidecar {
             info!("sidecar stdout closed");
         });
 
-        // Stderr reader: streaming notifications (search.result, etc.)
+        // Stderr reader: broadcast raw notification lines to all subscribers
         tokio::spawn(async move {
             let mut lines = stderr.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                match serde_json::from_str::<RpcNotification>(&line) {
-                    Ok(notif) => {
-                        if notify_tx.send(notif).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => {
-                        // Non-JSON stderr lines are normal Python logging
+                // Only broadcast lines that look like JSON notifications
+                if line.starts_with('{') {
+                    if let Ok(_) = serde_json::from_str::<RpcNotification>(&line) {
+                        let _ = notify_tx_clone.send(line);
                     }
                 }
             }
@@ -83,7 +81,7 @@ impl PythonSidecar {
                 request_id: Arc::new(Mutex::new(0)),
                 pending,
             },
-            notify_rx,
+            notify_tx,
         ))
     }
 

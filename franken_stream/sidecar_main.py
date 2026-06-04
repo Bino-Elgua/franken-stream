@@ -12,10 +12,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict
 from urllib.parse import quote
 
-from franken_stream.cache import SearchCache
+import hashlib
+
+from franken_stream.async_scraper import AsyncContentScraper
+from franken_stream.cache import FTSCache, SearchCache
 from franken_stream.llm import LLMClient
+from franken_stream.player import PremiumPlayer
 from franken_stream.providers import ProviderManager
 from franken_stream.scraper import ContentScraper
+from franken_stream.watchlist import Watchlist
 
 
 class SidecarHandler:
@@ -26,53 +31,51 @@ class SidecarHandler:
         self.llm = LLMClient()
         self.scraper = ContentScraper(provider_manager=self.pm, llm_client=self.llm)
         self.search_cache = SearchCache()
+        self.async_scraper = AsyncContentScraper(provider_manager=self.pm)
+        self.fts_cache = FTSCache()
+        self.player = PremiumPlayer()
+        self.watchlist = Watchlist()
 
     async def handle_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Search providers concurrently, streaming results via stderr."""
-        query = params.get("query", "")
-        max_providers = params.get("max_providers", 5)
-        provider_hash = self.pm.get_config_hash()
+        query = params.get("query", "").strip()
+        if not query:
+            return {"results": [], "total": 0}
 
-        payload = self.search_cache.get_or_fetch(
-            query,
-            provider_hash,
-            lambda: self._search_providers(query, max_providers),
-        )
-
-        total_results = 0
-        for batch in payload.get("batches", []):
-            notification = {
-                "jsonrpc": "2.0",
-                "method": "search.result",
-                "params": {
-                    "provider": batch["provider"],
-                    "results": batch["results"],
-                    "elapsed_ms": batch.get("elapsed_ms"),
-                    "cached": payload.get("cached", False),
-                },
+        # FTS5 cache hit
+        cached = self.fts_cache.lookup(query)
+        if cached:
+            return {
+                "results": [{"title": t, "url": u} for t, u in cached],
+                "total": len(cached),
+                "cached": True,
             }
-            print(json.dumps(notification), file=sys.stderr, flush=True)
-            total_results += len(batch["results"])
 
-        if total_results == 0:
-            ddg_results = self.scraper.search_duckduckgo(query)
-            if ddg_results:
-                notification = {
-                    "jsonrpc": "2.0",
-                    "method": "search.result",
-                    "params": {
-                        "provider": "duckduckgo",
-                        "results": [
-                            {"title": t, "url": u, "provider": "duckduckgo"}
-                            for t, u in ddg_results
-                        ],
-                        "cached": False,
-                    },
-                }
-                print(json.dumps(notification), file=sys.stderr, flush=True)
-                total_results += len(ddg_results)
+        bases = self.pm.get_ranked_search_bases()
+        scraper_results, plugin_results = await asyncio.gather(
+            self.async_scraper.search(query, bases),
+            self.pm.search_plugins(query),
+            return_exceptions=True,
+        )
+        if isinstance(scraper_results, Exception):
+            scraper_results = []
+        if isinstance(plugin_results, Exception):
+            plugin_results = []
 
-        return {"status": "complete", "total": total_results}
+        seen: set = {u for _, u in scraper_results}
+        results = list(scraper_results)
+        for title, url in plugin_results:
+            if url not in seen:
+                seen.add(url)
+                results.append((title, url))
+
+        if results:
+            self.fts_cache.store(query, results)
+
+        return {
+            "results": [{"title": t, "url": u} for t, u in results],
+            "total": len(results),
+            "cached": False,
+        }
 
     def _search_providers(self, query: str, max_providers: int) -> Dict[str, Any]:
         bases = self.pm.get_ranked_search_bases()[:max_providers]
@@ -174,13 +177,113 @@ class SidecarHandler:
         }
 
     async def handle_embed(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract embed URL from a detail page."""
         page_url = params.get("url", "")
         base_url = params.get("base_url")
-        embed = self.scraper.fetch_embed_from_page(page_url, base_url=base_url)
+        embed = await self.async_scraper.fetch_embed_from_page(page_url, base_url=base_url)
         if embed:
             return {"status": "found", "embed_url": embed}
         return {"status": "not_found"}
+
+    async def handle_play(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Launch premium MPV player for a URL or auto-search query."""
+        url = params.get("url", "").strip()
+        title = params.get("title", "")
+        query = params.get("query", "").strip()
+
+        if not url and query:
+            # Auto-search and pick first result
+            bases = self.pm.get_ranked_search_bases()
+            results = await self.async_scraper.search(query, bases)
+            if not results:
+                return {"status": "error", "message": f"No results for: {query}"}
+            title, page_url = results[0]
+            embed = await self.async_scraper.fetch_embed_from_page(page_url)
+            url = embed or page_url
+
+        if not url:
+            return {"status": "error", "message": "url or query is required"}
+
+        # Fetch embed if it looks like a detail page
+        if any(p in url for p in ["/watch/", "/movie/", "/title/", "/stream/"]):
+            embed = await self.async_scraper.fetch_embed_from_page(url)
+            if embed:
+                url = embed
+
+        result = await self.player.play(url, title=title)
+        if result.get("status") == "playing":
+            media_id = hashlib.md5(url.encode()).hexdigest()[:12]
+            self.watchlist.add(media_id, title or url, url)
+        return result
+
+    async def handle_control(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        action = params.get("action", "")
+        ok = False
+
+        if action == "pause":
+            ok = await self.player.pause()
+        elif action == "resume":
+            ok = await self.player.resume()
+        elif action == "stop":
+            await self.player.stop()
+            ok = True
+        elif action == "seek":
+            position = params.get("position")
+            if position is not None:
+                ok = await self.player.seek(int(position))
+        elif action == "quit":
+            await self.player.quit()
+            ok = True
+        else:
+            return {"status": "error", "message": f"Unknown action: {action}"}
+
+        return {"action": action, "ok": ok}
+
+    async def handle_status(self, _params: Dict) -> Dict[str, Any]:
+        return await self.player.get_status()
+
+    async def handle_providers(self, _params: Dict) -> Dict[str, Any]:
+        return {
+            "search_bases": self.pm.get_ranked_search_bases(),
+            "embed_fallbacks": self.pm.get_embed_fallbacks(),
+            "health": self.pm.get_health_summary(),
+        }
+
+    async def handle_watchlist_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        in_progress_only = params.get("in_progress", False)
+        items = self.watchlist.in_progress() if in_progress_only else self.watchlist.all()
+        return {"items": items, "total": len(items)}
+
+    async def handle_watchlist_add(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        title = params.get("title", "").strip()
+        url = params.get("url", "").strip()
+        if not title or not url:
+            return {"status": "error", "message": "title and url required"}
+        media_id = params.get("id") or hashlib.md5(url.encode()).hexdigest()[:12]
+        self.watchlist.add(
+            media_id,
+            title,
+            url,
+            provider=params.get("provider", ""),
+            year=params.get("year"),
+            media_type=params.get("media_type", "movie"),
+            quality=params.get("quality", "unknown"),
+        )
+        return {"status": "ok", "id": media_id}
+
+    async def handle_watchlist_update(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        media_id = params.get("id", "")
+        progress = params.get("progress_seconds")
+        if not media_id or progress is None:
+            return {"status": "error", "message": "id and progress_seconds required"}
+        self.watchlist.update_progress(media_id, int(progress), params.get("duration_seconds"))
+        return {"status": "ok"}
+
+    async def handle_watchlist_remove(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        media_id = params.get("id", "")
+        if not media_id:
+            return {"status": "error", "message": "id required"}
+        self.watchlist.remove(media_id)
+        return {"status": "ok"}
 
 
 async def main():
@@ -190,6 +293,14 @@ async def main():
         "get_health": handler.handle_get_health,
         "get_embed": handler.handle_embed,
         "openclaw": handler.handle_openclaw,
+        "play": handler.handle_play,
+        "control": handler.handle_control,
+        "status": handler.handle_status,
+        "providers": handler.handle_providers,
+        "watchlist.list": handler.handle_watchlist_list,
+        "watchlist.add": handler.handle_watchlist_add,
+        "watchlist.update": handler.handle_watchlist_update,
+        "watchlist.remove": handler.handle_watchlist_remove,
     }
 
     loop = asyncio.get_event_loop()

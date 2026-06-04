@@ -5,13 +5,13 @@ use serde_json::{json, Value};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
-struct OpenClawRequest {
+pub struct OpenClawRequest {
     intent: String,
     params: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
-struct OpenClawResponse {
+pub struct OpenClawResponse {
     status: String,
     action_taken: String,
     data: Value,
