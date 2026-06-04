@@ -44,3 +44,4 @@ htmlcov/
 .franken-stream/
 target/
 .claude/
+web-ui/node_modules/
