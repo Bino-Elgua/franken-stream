@@ -1,321 +1,178 @@
-"""Textual TUI dashboard for franken-stream."""
+"""Enhanced Textual TUI for franken-stream."""
 
-from typing import Optional
+import asyncio
+from typing import List, Tuple
 
-from textual.app import ComposeResult
-from textual.screen import Screen
-from textual import events
-from textual.widgets import (
-    Header,
-    Footer,
-    Static,
-    Input,
-    Label,
-)
-from textual.containers import Container, Vertical, Horizontal
+from textual.app import App, ComposeResult
+from textual.widgets import Header, Footer, Input, Static
+from textual.containers import Vertical
 from textual.binding import Binding
-from rich.panel import Panel
-from rich.text import Text
 
 from franken_stream.providers import ProviderManager
 from franken_stream.scraper import ContentScraper
 
 
-class StatusBar(Static):
-    """Bottom status bar."""
+class FrankenStreamTUI(App):
+    """Full-screen TUI with search, result display, and playback."""
 
-    DEFAULT_CSS = """
-    StatusBar {
-        dock: bottom;
-        height: 1;
-        background: $surface;
-        color: $text;
-        border-top: solid $primary;
-        content-align: left middle;
-    }
+    CSS = """
+    Screen { layout: vertical; background: $surface; color: $text; }
+    #search-bar { height: 3; dock: top; border-bottom: solid $primary; padding: 0 1; }
+    #results-panel { height: 1fr; overflow-y: auto; padding: 1; }
+    #select-bar { height: 3; dock: bottom; border-top: solid $accent; padding: 0 1; }
+    #status-bar { height: 1; dock: bottom; background: $surface; padding: 0 1; content-align: left middle; }
+    .hidden { display: none; }
     """
-
-    def __init__(self, message: str = "Ready", **kwargs):
-        super().__init__(message, **kwargs)
-
-    def update_status(self, message: str) -> None:
-        """Update status message."""
-        self.update(message)
-
-
-class HoverLabel(Label):
-    """Label with hover tooltip support."""
-
-    def __init__(self, content: str = "", *, tooltip: str = "", **kwargs):
-        super().__init__(content, **kwargs)
-        self.tooltip = tooltip
-
-    def on_mount(self) -> None:
-        self.capture_mouse()
-
-    def on_mouse_move(self, event: events.MouseMove) -> None:
-        if self.tooltip:
-            status = self.app.query_one(StatusBar)
-            status.update_status(self.tooltip)
-            event.stop()
-
-    def on_leave(self, event: events.Leave) -> None:
-        status = self.app.query_one(StatusBar)
-        status.update_status("Ready")
-
-
-class SearchScreen(Screen):
-    """Full-screen search interface."""
 
     BINDINGS = [
-        Binding("escape", "cancel", "Back"),
-        Binding("enter", "search", "Search"),
+        Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+f", "focus_search", "Search"),
+        Binding("escape", "cancel", "Cancel"),
+        Binding("ctrl+u", "update_providers", "Update"),
     ]
 
-    DEFAULT_CSS = """
-    Screen {
-        align: center middle;
-    }
-    
-    #search_container {
-        width: 60;
-        height: 10;
-        border: solid $primary;
-        background: $surface;
-    }
-    
-    #search_input {
-        width: 100%;
-        margin: 1;
-    }
-    """
+    def __init__(self):
+        super().__init__()
+        self._results: List[Tuple[str, str]] = []
+        self._pm: ProviderManager = None
+        self._scraper: ContentScraper = None
 
     def compose(self) -> ComposeResult:
-        """Render search screen."""
-        with Vertical(id="search_container"):
-            yield Label("Search Movies & TV Shows")
-            yield Input(
-                id="search_input",
-                placeholder="Type query and press Enter..."
-            )
-
-    def on_mount(self) -> None:
-        """Focus input on mount."""
-        self.query_one("#search_input", Input).focus()
-
-    def action_search(self) -> None:
-        """Execute search."""
-        query = self.query_one("#search_input", Input).value
-        if query.strip():
-            self.app.search_query = query
-            self.app.pop_screen()
-
-    def action_cancel(self) -> None:
-        """Cancel and go back."""
-        self.app.pop_screen()
-
-
-class DashboardScreen(Screen):
-    """Main dashboard screen."""
-
-    BINDINGS = [
-        Binding("/", "search", "Search"),
-        Binding("b", "browse", "Browse"),
-        Binding("h", "history", "History"),
-        Binding("u", "update", "Update"),
-        Binding("?", "help", "Help"),
-        Binding("q", "quit", "Quit"),
-    ]
-
-    DEFAULT_CSS = """
-    DashboardScreen {
-        background: $background;
-    }
-    
-    #sidebar {
-        width: 25;
-        border-right: solid $primary;
-        background: $panel;
-        padding: 1;
-    }
-    
-    #dashboard {
-        width: 1fr;
-        height: 1fr;
-        background: $background;
-    }
-    
-    #dashboard_panel {
-        height: 1fr;
-        background: $background;
-    }
-    
-    .sidebar-heading {
-        text-style: bold;
-        color: $text-primary;
-        margin-bottom: 1;
-    }
-
-    .sidebar-entry {
-        color: $text-secondary;
-        padding: 0 0 0 1;
-    }
-
-    .sidebar-empty {
-        color: $text-muted;
-        padding: 0 0 0 1;
-    }
-    
-    #status_bar {
-        dock: bottom;
-        height: 1;
-        background: $surface;
-    }
-    """
-
-    def compose(self) -> ComposeResult:
-        """Render main screen."""
-        yield Header()
-        with Horizontal():
-            # Sidebar
-            with Vertical(id="sidebar"):
-                yield Static("RECENT SEARCHES", classes="sidebar-heading")
-                searches = getattr(self.app, "searches", [])
-                if searches:
-                    for i, search in enumerate(searches[-5:], 1):
-                        yield HoverLabel(
-                            f"{i}. {search[:18]}",
-                            tooltip="Recent search history entry. Press / to reopen the search screen.",
-                            classes="sidebar-entry"
-                        )
-                else:
-                    yield Static("No recent searches yet.", classes="sidebar-empty")
-
-                yield Static("\nKEYBINDINGS", classes="sidebar-heading")
-                yield HoverLabel("/  Search", tooltip="Open the search screen.", classes="sidebar-entry")
-                yield HoverLabel("b  Browse", tooltip="Browse categories and curated streams.", classes="sidebar-entry")
-                yield HoverLabel("h  History", tooltip="Show recent search history.", classes="sidebar-entry")
-                yield HoverLabel("u  Update", tooltip="Refresh providers and connection status.", classes="sidebar-entry")
-                yield HoverLabel("?  Help", tooltip="Show help details and keyboard commands.", classes="sidebar-entry")
-                yield HoverLabel("q  Quit", tooltip="Exit Franken-Stream.", classes="sidebar-entry")
-
-            # Main dashboard
-            with Vertical(id="dashboard"):
-                yield Static(self._render_dashboard(), id="dashboard_panel")
-        yield StatusBar(id="status_bar")
+        yield Header(show_clock=True)
+        with Vertical(id="search-bar"):
+            yield Input(placeholder="Search movies & TV shows… (Enter to search)", id="search-input")
+        yield Static("", id="results-panel")
+        with Vertical(id="select-bar", classes="hidden"):
+            yield Input(placeholder="Enter result # to play  (0 = cancel)", id="select-input")
+        yield Static(
+            " Franken-Stream  │  Ctrl+F search  │  Ctrl+U update  │  Ctrl+Q quit",
+            id="status-bar",
+        )
         yield Footer()
 
     def on_mount(self) -> None:
-        """Initialize screen."""
-        self.app.title = "Franken-Stream"
-        self.app.pm = ProviderManager()
+        self._pm = ProviderManager()
+        self._scraper = ContentScraper(provider_manager=self._pm)
+        self.query_one("#search-input", Input).focus()
+        self._set_status("Ready — type a title and press Enter")
 
-    def _render_dashboard(self) -> Panel:
-        """Render dashboard content."""
-        text = Text()
-        text.append("FRANKEN-STREAM\n", style="bold yellow")
-        text.append("Terminal Media Streamer\n\n", style="dim")
-        
-        text.append("CATEGORIES:\n", style="bold cyan")
-        text.append("  New Releases       Popular Movies\n", style="white")
-        text.append("  TV Shows           My List\n", style="white")
-        text.append("  Trending           Legal Only\n\n", style="white")
-        
-        text.append("Press ", style="green")
-        text.append("/", style="bold green")
-        text.append(" to search or ", style="green")
-        text.append("?", style="bold green")
-        text.append(" for help", style="green")
-        
-        return Panel(text, expand=True, border_style="green")
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "search-input":
+            query = event.value.strip()
+            if query:
+                self._set_status(f"Searching '{query}'…")
+                asyncio.create_task(self._do_search(query))
+        elif event.input.id == "select-input":
+            await self._handle_selection(event.value.strip())
+            event.input.value = ""
 
-    def action_search(self) -> None:
-        """Open search screen."""
-        self.app.push_screen(SearchScreen())
+    async def _do_search(self, query: str) -> None:
+        try:
+            bases = self._pm.get_ranked_search_bases()
+            results: List[Tuple[str, str]] = await asyncio.to_thread(
+                self._scraper.search, query, bases, False
+            )
+            self._results = results
+            self._render_results(query, results)
 
-    def action_browse(self) -> None:
-        """Browse categories."""
-        status = self.query_one("#status_bar", StatusBar)
-        status.update_status("Browse not yet implemented")
-
-    def action_history(self) -> None:
-        """Show search history."""
-        status = self.query_one("#status_bar", StatusBar)
-        status.update_status("Showing history...")
-
-    def action_update(self) -> None:
-        """Update providers."""
-        status = self.query_one("#status_bar", StatusBar)
-        status.update_status("Updating providers...")
-        
-        if hasattr(self.app, "pm") and self.app.pm:
-            if self.app.pm.update_providers():
-                status.update_status("Providers updated ✓")
+            if results:
+                self.query_one("#select-bar").remove_class("hidden")
+                self.query_one("#select-input", Input).focus()
+                self._set_status(
+                    f"Found {len(results)} result(s) for '{query}' — enter number to play, 0 to cancel"
+                )
             else:
-                status.update_status("Update failed")
+                self._set_status(f"No results for '{query}' — try different keywords")
+        except Exception as e:
+            self._set_status(f"Search error: {e}")
 
-    def action_help(self) -> None:
-        """Show help."""
-        status = self.query_one("#status_bar", StatusBar)
-        status.update_status("Press ? for keybindings (see sidebar)")
+    def _render_results(self, query: str, results: List[Tuple[str, str]]) -> None:
+        from rich.table import Table
+        from urllib.parse import urlparse
 
-    def action_quit(self) -> None:
-        """Quit app."""
-        self.app.exit()
+        panel = self.query_one("#results-panel", Static)
 
+        if not results:
+            panel.update("[yellow]No results found[/yellow]")
+            return
 
-class FrankenStreamApp:
-    """Main TUI application wrapper."""
+        table = Table(
+            title=f"Results for: {query}",
+            expand=True,
+            header_style="bold cyan",
+            border_style="dim",
+        )
+        table.add_column("#", style="magenta", width=4, no_wrap=True)
+        table.add_column("Title", style="cyan")
+        table.add_column("Source", style="dim", width=28)
 
-    def __init__(self):
-        """Initialize app."""
-        from textual.app import App as TextualApp
+        for i, (title, url) in enumerate(results[:20], 1):
+            domain = urlparse(url).netloc or url[:28]
+            table.add_row(str(i), title[:65], domain[:28])
 
-        class App(TextualApp):
-            """Franken-Stream TUI."""
+        panel.update(table)
 
-            CSS = """
-            Screen {
-                background: $surface;
-                color: $text;
-            }
-            
-            Header {
-                background: $primary;
-                color: $text;
-                dock: top;
-                height: 1;
-            }
-            """
+    async def _handle_selection(self, value: str) -> None:
+        try:
+            num = int(value)
+        except ValueError:
+            self._set_status(f"Invalid number: '{value}' — enter a result number")
+            return
 
-            BINDINGS = [("ctrl+c", "quit", "Quit")]
+        if num == 0:
+            self.query_one("#select-bar").add_class("hidden")
+            self.query_one("#search-input", Input).focus()
+            self._set_status("Cancelled — type a new search")
+            return
 
-            def __init__(self):
-                super().__init__()
-                self.search_query = None
-                self.searches = []
-                self.pm = None
+        if not self._results or num < 1 or num > len(self._results):
+            self._set_status(f"#{num} out of range (1–{len(self._results)})")
+            return
 
-            def on_mount(self) -> None:
-                """Mount main screen."""
-                self.push_screen(DashboardScreen())
+        title, url = self._results[num - 1]
+        self.query_one("#select-bar").add_class("hidden")
+        self._set_status(f"Fetching player for: {title}…")
+        asyncio.create_task(self._do_play(title, url))
 
-        self.app = App()
+    async def _do_play(self, title: str, url: str) -> None:
+        try:
+            embed_url = await asyncio.to_thread(self._scraper.fetch_embed_from_page, url)
+            play_url = embed_url or url
+            is_embed = bool(embed_url)
+            self._set_status(f"Playing: {title}")
+            await asyncio.to_thread(self._scraper.play_url, play_url, is_embed, title)
+            self._set_status(f"Finished: {title}  │  Ctrl+F to search again")
+        except Exception as e:
+            self._set_status(f"Playback error: {e}")
 
-    def run(self) -> None:
-        """Run the TUI application."""
-        self.app.run()
+    def action_focus_search(self) -> None:
+        self.query_one("#select-bar").add_class("hidden")
+        self.query_one("#search-input", Input).focus()
+
+    def action_cancel(self) -> None:
+        self.query_one("#select-bar").add_class("hidden")
+        self.query_one("#search-input", Input).focus()
+        self._set_status("Cancelled")
+
+    def action_update_providers(self) -> None:
+        self._set_status("Updating providers…")
+        asyncio.create_task(self._update_providers())
+
+    async def _update_providers(self) -> None:
+        ok = await asyncio.to_thread(self._pm.update_providers)
+        self._set_status("Providers updated ✓" if ok else "Provider update failed")
+
+    def _set_status(self, message: str) -> None:
+        self.query_one("#status-bar", Static).update(f" {message}")
 
 
 def run_tui() -> None:
     """Entry point for TUI."""
     try:
-        app = FrankenStreamApp()
-        app.run()
+        FrankenStreamTUI().run()
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
+        from rich.console import Console
+        Console().print(f"[red]TUI error: {e}[/red]")
         raise

@@ -24,9 +24,19 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers(Any);
 
     let app = Router::new()
+        // Legacy routes
         .route("/api/search", get(routes::search::search_stream))
         .route("/api/health", get(routes::health::health_check))
         .route("/api/openclaw", post(routes::openclaw::handle_intent))
+        // v1 routes
+        .route("/api/v1/skills/manifest", get(routes::v1::skills_manifest))
+        .route("/api/v1/search", post(routes::v1::v1_search))
+        .route("/api/v1/play", post(routes::v1::v1_play))
+        .route("/api/v1/control", post(routes::v1::v1_control))
+        .route("/api/v1/status", get(routes::v1::v1_status))
+        .route("/api/v1/embed/:id", get(routes::v1::v1_embed))
+        .route("/api/v1/providers", get(routes::v1::v1_providers))
+        .route("/api/v1/ws", get(routes::v1::ws_handler))
         .layer(cors)
         .with_state(state);
 

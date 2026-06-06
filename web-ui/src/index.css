@@ -1,0 +1,81 @@
+@import 'video.js/dist/video-js.css';
+
+:root {
+  --neon-cyan: #00f5ff;
+  --neon-purple: #b026ff;
+  --neon-pink: #ff006e;
+  --neon-green: #39ff14;
+  --dark-bg: #0a0a0f;
+  --card-bg: rgba(15, 15, 25, 0.85);
+  --border-subtle: rgba(0, 245, 255, 0.12);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  font-family: 'Inter', sans-serif;
+  background: var(--dark-bg);
+  color: #fff;
+  overflow-x: hidden;
+}
+
+/* Scrollbar */
+* { scrollbar-width: thin; scrollbar-color: var(--neon-cyan) var(--dark-bg); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--dark-bg); }
+::-webkit-scrollbar-thumb { background: var(--neon-cyan); border-radius: 3px; }
+
+/* Orbitron font shortcut */
+.font-orbitron { font-family: 'Orbitron', monospace; }
+
+/* Glass */
+.glass {
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Neon glow helpers */
+.neon-glow {
+  box-shadow: 0 0 16px rgba(0,245,255,0.28), 0 0 32px rgba(0,245,255,0.10);
+}
+.neon-text {
+  text-shadow: 0 0 8px var(--neon-cyan), 0 0 20px var(--neon-cyan);
+}
+
+/* Scanline overlay */
+.scanlines {
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px, transparent 3px,
+    rgba(0,245,255,0.015) 3px, rgba(0,245,255,0.015) 4px
+  );
+}
+
+/* Video.js cyberpunk skin overrides */
+.vjs-franken .vjs-control-bar {
+  background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%);
+}
+.vjs-franken .vjs-play-progress { background: var(--neon-cyan); }
+.vjs-franken .vjs-volume-level { background: var(--neon-cyan); }
+.vjs-franken.vjs-playing .vjs-big-play-button { display: none; }
+.vjs-franken .vjs-big-play-button {
+  border: 2px solid var(--neon-cyan);
+  background: rgba(0,245,255,0.15);
+  border-radius: 50%;
+  width: 80px; height: 80px;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+}
+.vjs-franken .vjs-big-play-button:hover {
+  background: rgba(0,245,255,0.3);
+  box-shadow: 0 0 20px rgba(0,245,255,0.5);
+}
+.vjs-franken .vjs-big-play-button .vjs-icon-placeholder::before {
+  color: var(--neon-cyan);
+  font-size: 2rem;
+  line-height: 80px;
+}

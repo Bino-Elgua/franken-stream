@@ -1,0 +1,69 @@
+{
+  "skill": {
+    "id": "franken-stream",
+    "name": "Franken-Stream Media Player",
+    "version": "2.0.0",
+    "description": "Search and play movies/TV shows from multiple streaming providers",
+    "capabilities": ["search_media", "play_media", "control_playback", "get_playback_status", "list_providers"],
+    "endpoints": {
+      "base_url": "http://localhost:8000/api/v1",
+      "websocket": "ws://localhost:8000/api/ws",
+      "rust_base_url": "http://localhost:3001/api/v1"
+    }
+  },
+  "actions": {
+    "search_media": {
+      "method": "POST",
+      "path": "/api/v1/search",
+      "description": "Search for movies or TV shows across all providers",
+      "parameters": {
+        "query": {"type": "string", "required": true},
+        "type": {"type": "string", "enum": ["movie", "tv", "any"], "default": "any"},
+        "year": {"type": "integer", "description": "Filter by release year"},
+        "max_results": {"type": "integer", "default": 10, "maximum": 50}
+      },
+      "returns": {
+        "total": "integer",
+        "results": [{"id": "string", "title": "string", "year": "integer|null", "type": "string", "quality": "string", "provider": "string", "url": "string", "thumbnail": "string|null"}]
+      }
+    },
+    "play_media": {
+      "method": "POST",
+      "path": "/api/v1/play",
+      "description": "Play a media item by search result ID or direct URL",
+      "parameters": {
+        "id": {"type": "string", "description": "ID from search results"},
+        "url": {"type": "string", "description": "Direct URL (alternative to id)"},
+        "quality": {"type": "string", "enum": ["best", "1080p", "720p", "480p"], "default": "best"},
+        "title": {"type": "string", "default": ""}
+      },
+      "returns": {"playback_id": "string", "status": "string", "title": "string"}
+    },
+    "control_playback": {
+      "method": "POST",
+      "path": "/api/v1/control",
+      "description": "Control playback (pause, resume, stop, seek)",
+      "parameters": {
+        "action": {"type": "string", "enum": ["pause", "resume", "stop", "seek"], "required": true},
+        "position": {"type": "integer", "description": "Seek position in seconds"}
+      },
+      "returns": {"action": "string", "ok": "boolean"}
+    },
+    "get_playback_status": {
+      "method": "GET",
+      "path": "/api/v1/status",
+      "description": "Get current playback state",
+      "returns": {"is_playing": "boolean", "playback_id": "string|null", "title": "string", "elapsed_seconds": "integer"}
+    },
+    "list_providers": {
+      "method": "GET",
+      "path": "/api/v1/providers",
+      "description": "List available streaming providers and their health",
+      "returns": {"search_bases": ["string"], "embed_fallbacks": ["string"], "health": [{"url": "string", "success_rate": "number", "avg_ms": "number"}]}
+    }
+  },
+  "agent_examples": {
+    "hermes": "from skills.hermes_integration import FrankenStreamSkill\nskill = FrankenStreamSkill()\nresults = skill.search('Oppenheimer')\nif results: skill.play(media_id=results[0]['id'])",
+    "raw_http": "curl -X POST http://localhost:8000/api/v1/search -H 'Content-Type: application/json' -d '{\"query\": \"Inception\"}'"
+  }
+}

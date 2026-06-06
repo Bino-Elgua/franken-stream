@@ -50,6 +50,9 @@ def watch(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed debug info"
     ),
+    debug: bool = typer.Option(
+        False, "--debug", help="Show full pipeline diagnostics (proxy, providers, embed URL)"
+    ),
 ) -> None:
     """
     Search and stream a movie or TV show.
@@ -61,6 +64,18 @@ def watch(
         franken-stream watch "Movie" --legal-only
     """
     try:
+        # Validate proxy syntax before attempting network calls
+        if proxy:
+            from urllib.parse import urlparse as _urlparse
+            parsed_proxy = _urlparse(proxy)
+            if not parsed_proxy.scheme or not parsed_proxy.hostname:
+                console.print(f"[yellow]⚠[/yellow] Proxy URL looks malformed: {proxy}")
+                console.print("[yellow]  Expected format: http://host:port or socks5://host:port[/yellow]")
+
+        if debug:
+            console.print("[cyan]═══ Debug Mode ═══[/cyan]")
+            console.print(f"  Proxy: {proxy or 'None'}")
+
         # Load providers
         pm = ProviderManager()
         if legal_only:
@@ -77,6 +92,16 @@ def watch(
 
         # Initialize scraper with health tracking
         scraper = ContentScraper(proxy=proxy, provider_manager=pm)
+
+        if proxy and (verbose or debug):
+            console.print("[cyan]→[/cyan] Checking proxy connectivity...")
+            if scraper.validate_proxy(proxy):
+                console.print("[green]✓[/green] Proxy is reachable")
+            else:
+                console.print("[yellow]⚠[/yellow] Proxy appears unreachable — search may fail")
+
+        if verbose or debug:
+            console.print(f"[dim]  Providers loaded: {len(bases)}[/dim]")
 
         # Search for content
         console.print(f"\n[cyan]Searching for:[/cyan] {query}\n")
@@ -106,7 +131,7 @@ def watch(
 
         # Let user pick
         if interactive:
-            _handle_selection(results, scraper, download, output)
+            _handle_selection(results, scraper, download, output, debug=debug)
         else:
             console.print(
                 "[cyan]→[/cyan] Use --interactive to select a result"
@@ -335,6 +360,7 @@ def _handle_selection(
     scraper: ContentScraper,
     download: bool = False,
     output: Optional[str] = None,
+    debug: bool = False,
 ) -> None:
     """Handle user selection from search results."""
     try:
@@ -345,6 +371,10 @@ def _handle_selection(
         idx = int(choice) - 1
         title, url = results[idx]
 
+        if debug:
+            console.print(f"[cyan]  Selected:[/cyan] {title}")
+            console.print(f"[cyan]  URL:[/cyan] {url}")
+
         console.print(
             f"\n[cyan]Selected:[/cyan] {title}\n"
             f"[cyan]URL:[/cyan] {url}\n"
@@ -353,17 +383,26 @@ def _handle_selection(
         # Determine if this is a detail page and extract embed
         is_embed = False
         is_detail_page = "/watch/" in url or "/movie/" in url or "/title/" in url
-        
+
         if is_detail_page:
             console.print("[cyan]→[/cyan] Fetching player embed...")
-            
+
             # Try to get the full base URL for relative URL construction
             base_url = None
             if url.startswith("/"):
                 # Relative URL - need to determine base
                 console.print("[yellow]⚠ Relative URL detected, using fallback base...")
-            
+
             embed_url = scraper.fetch_embed_from_page(url, base_url=base_url)
+            if debug:
+                if embed_url:
+                    console.print(f"[cyan]  Embed URL:[/cyan] {embed_url[:100]}")
+                else:
+                    console.print("[yellow]  No embed found — trying direct URL[/yellow]")
+                    console.print("[yellow]  Troubleshooting:[/yellow]")
+                    console.print("    1. Site may require JavaScript (use browser)")
+                    console.print("    2. Run 'franken-stream test-providers' to check health")
+                    console.print("    3. Try 'franken-stream update' for fresh provider list")
             if embed_url:
                 is_embed = True
                 url = embed_url
